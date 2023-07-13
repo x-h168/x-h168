@@ -1,0 +1,12 @@
+#ShellClash配置文件，不明勿动！
+start_old=已开启
+versionsh_l=1.7.9f
+update_url=http://t.jwsc.eu.org
+initdir=/etc/storage/started_script.sh
+userguide=1
+redir_mod=Redir模式
+bindir=/etc/storage/clash
+cpucore=mipsle-softfloat
+clashcore=clash
+clashv=v1.7.1
+Geo_v=20230713
