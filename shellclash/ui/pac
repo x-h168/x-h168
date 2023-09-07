@@ -13,5 +13,5 @@ function FindProxyForURL(url, host) {
 	)
 		return "DIRECT";
 	else
-		return "PROXY 10.248.44.17:7890; DIRECT; SOCKS5 10.248.44.17:7890"
+		return "PROXY 10.248.44.9:7890; DIRECT; SOCKS5 10.248.44.9:7890"
 }

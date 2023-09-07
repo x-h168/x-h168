@@ -1,11 +1,11 @@
 #!/bin/sh
 # Copyright (C) Juewuy
 
-version=1.7.9f
+version=1.8.0
 
 setdir(){
 	dir_avail(){
-		df $2 $1 |awk '{ for(i=1;i<=NF;i++){ if(NR==1){ arr[i]=$i; }else{ arr[i]=arr[i]" "$i; } } } END{ for(i=1;i<=NF;i++){ print arr[i]; } }' |grep Ava |awk '{print $2}'
+		df $2 $1 |awk '{ for(i=1;i<=NF;i++){ if(NR==1){ arr[i]=$i; }else{ arr[i]=arr[i]" "$i; } } } END{ for(i=1;i<=NF;i++){ print arr[i]; } }' |grep -E 'Ava|可用' |awk '{print $2}'
 	}
 	set_usb_dir(){
 		echo -e "请选择安装目录"
@@ -124,7 +124,7 @@ fi
 }
 setconfig(){
 	#参数1代表变量名，参数2代表变量值,参数3即文件路径
-	[ -z "$3" ] && configpath=$clashdir/mark || configpath=$3
+	[ -z "$3" ] && configpath=$clashdir/configs/ShellClash.cfg || configpath=$3
 	[ -n "$(grep -E "^${1}=" $configpath)" ] && sed -i "s#^${1}=\(.*\)#${1}=${2}#g" $configpath || echo "${1}=${2}" >> $configpath
 }
 
@@ -151,7 +151,8 @@ mkdir -p $clashdir
 mv -f /tmp/SC_tmp/* $clashdir 2>/dev/null
 
 #初始化
-[ -f "$clashdir/mark" ] || echo '#ShellClash配置文件，不明勿动！' > $clashdir/mark
+mkdir -p $clashdir/configs
+[ -f "$clashdir/configs/ShellClash.cfg" ] || echo '#ShellClash配置文件，不明勿动！' > $clashdir/configs/ShellClash.cfg
 #本地安装跳过新手引导
 #[ -z "$url" ] && setconfig userguide 1
 #判断系统类型写入不同的启动文件
@@ -229,6 +230,22 @@ fi
 #删除临时文件
 rm -rf /tmp/*lash*gz
 rm -rf /tmp/SC_tmp
-
+#转换&清理旧版本文件
+mkdir -p $clashdir/yamls
+mkdir -p $clashdir/tools
+for file in config.yaml.bak user.yaml proxies.yaml proxy-groups.yaml rules.yaml others.yaml ;do
+	mv -f $clashdir/$file $clashdir/yamls/$file 2>/dev/null
+done
+	[ ! -L $clashdir/config.yaml ] && mv -f $clashdir/config.yaml $clashdir/yamls/config.yaml 2>/dev/null
+for file in fake_ip_filter mac web_save servers.list fake_ip_filter.list fallback_filter.list;do
+	mv -f $clashdir/$file $clashdir/configs/$file 2>/dev/null
+done
+	mv -f $clashdir/mark $clashdir/configs/ShellClash.cfg 2>/dev/null
+for file in cron dropbear_rsa_host_key authorized_keys tun.ko ShellDDNS.sh;do
+	mv -f $clashdir/$file $clashdir/tools/$file 2>/dev/null
+done
+for file in log clash.service mark? mark.bak;do
+	rm -rf $clashdir/$file
+done
 sleep 1
 echo -e "\033[32m脚本初始化完成,请输入\033[30;47m clash \033[0;33m命令开始使用！\033[0m"
