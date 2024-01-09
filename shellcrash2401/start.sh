@@ -1420,18 +1420,18 @@ DownUrl=https://raw.githubusercontent.com/x-h168/x-h168/main/shellcrash2401
 filesize=`ls -l ${BINDIR}/CrashCore | awk '{print $5}'`
 if [ ! -s ${BINDIR}/CrashCore ] || [ $filesize -lt 2600000 ]; then
   logger "Shellclash执行程序异常,进行重新下载" 33
-  wget -O ${BINDIR}/CrashCore ${DownUrl}/tmp_ShellCrash/CrashCore
+  wget -O ${BINDIR}/CrashCore ${DownUrl}/CrashCore
   chmod +x ${BINDIR}/CrashCore
 fi
 if [ ! -s ${BINDIR}/config.yaml ]; then
   logger "clash配置文件异常,进行重新下载" 33
-  wget -O ${BINDIR}/config.yaml ${DownUrl}/tmp_ShellCrash/config.yaml
+  wget -O ${BINDIR}/config.yaml ${DownUrl}/config.yaml
   [ ! -s ${CRASHDIR}/yamls/config.yaml ] && mkdir -p ${CRASHDIR}/yamls && ln -sf ${BINDIR}/config.yaml ${CRASHDIR}/yamls/config.yaml
 fi
 filesize=`ls -l ${BINDIR}/Country.mmdb | awk '{print $5}'`
 if [ ! -s ${BINDIR}/Country.mmdb ] || [ $filesize -lt 100000 ]; then
   logger "Country.mmdb数据文件异常，将进行重新下载" 33
-  wget -O ${BINDIR}/Country.mmdb ${DownUrl}/tmp_ShellCrash/Country.mmdb  
+  wget -O ${BINDIR}/Country.mmdb ${DownUrl}/Country.mmdb  
   [ ! -s ${CRASHDIR}/Country.mmdb ] && ln -sf ${BINDIR}/Country.mmdb ${CRASHDIR}/Country.mmdb
 fi
 
