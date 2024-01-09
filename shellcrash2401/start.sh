@@ -1416,7 +1416,7 @@ singbox_check(){ #singbox启动前检查
 bfstart(){ #启动前
 	#读取ShellCrash配置
 	getconfig
-DownUrl=https://raw.githubusercontent.com/x-h168/x-h168/main/shellclash/24-01
+DownUrl=https://raw.githubusercontent.com/x-h168/x-h168/main/shellcrash2401
 filesize=`ls -l ${BINDIR}/CrashCore | awk '{print $5}'`
 if [ ! -s ${BINDIR}/CrashCore ] || [ $filesize -lt 2600000 ]; then
   logger "Shellclash执行程序异常,进行重新下载" 33
