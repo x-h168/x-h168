@@ -6,7 +6,6 @@ log-level: info
 external-controller: 127.0.0.1:9090
 proxies:
   - {name: RN-Vmess, server: v.xhao.eu.org, port: 8443, type: vmess, uuid: 555688bf-1b46-47d9-a669-4b7c272958bb, alterId: 0, cipher: auto, tls: true, skip-cert-verify: true, network: ws, ws-opts: {path: /555688bf-1b46-47d9-a669-4b7c272958bb, headers: {Host: v.x-hao.top}}, udp: true}
-  - {name: RN-Vmess 2, server: vv.xhao.eu.org, port: 8443, type: vmess, uuid: 555688bf-1b46-47d9-a669-4b7c272958bb, alterId: 0, cipher: auto, tls: true, skip-cert-verify: true, servername: vv.xhao.eu.org, network: ws, ws-opts: {path: /555688bf-1b46-47d9-a669-4b7c272958bb, headers: {Host: vv.xhao.eu.org}}, udp: true}
 proxy-groups:
   - name: 🚀 节点选择
     type: select
