@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Copyright (C) Juewuy
 
 #初始化目录
@@ -138,6 +138,20 @@ put_save(){ #推送面板选择
 		wget -q --method=PUT --header="Authorization: Bearer ${secret}" --header="Content-Type:application/json" --body-data="$2" "$1" >/dev/null
 	fi
 }
+get_bin(){ #专用于项目内部文件的下载
+	source ${CRASHDIR}/configs/ShellCrash.cfg >/dev/null
+	[ -z "$update_url" ] && update_url=https://fastly.jsdelivr.net/gh/juewuy/ShellCrash@master
+	if [ -n "$url_id" ];then
+		if [ "$url_id" = 101 ];then
+			url="$(grep "$url_id" ${CRASHDIR}/configs/servers.list | awk '{print $3}')@$release_type/$2" #jsdelivr特殊处理
+		else
+			url="$(grep "$url_id" ${CRASHDIR}/configs/servers.list | awk '{print $3}')/$release_type/$2"
+		fi
+	else
+		url="$update_url/$2"
+	fi
+	$0 webget "$1" "$url" "$3" "$4" "$5" "$6"
+}
 mark_time(){ #时间戳
 	echo `date +%s` > ${TMPDIR}/crash_start_time
 }
@@ -199,16 +213,6 @@ check_clash_config(){ #检查clash配置文件
 		done < ${TMPDIR}/clash_proxies_$USER
 		rm -rf ${TMPDIR}/clash_proxies_$USER
 	}
-	#使用核心内置test功能检测
-	if [ -x ${BINDIR}/CrashCore ];then
-		${BINDIR}/CrashCore -t -d ${BINDIR} -f $core_config_new >/dev/null
-		if [ "$?" != "0" ];then
-			logger "配置文件加载失败！请查看报错信息！" 31
-			${BINDIR}/CrashCore -t -d ${BINDIR} -f $core_config_new
-			echo "$($BINDIR/CrashCore -t -d $BINDIR -f $core_config_new)" >> ${TMPDIR}/ShellCrash.log
-			exit 1
-		fi
-	fi
 }
 check_singbox_config(){ #检查singbox配置文件
 	#使用核心内置format功能检测并格式化
@@ -242,6 +246,8 @@ get_core_config(){ #下载内核配置文件
 			target=clash
 			format=yaml
 		fi
+		#Urlencord转码处理保留字符
+		Url=$(echo $Url | sed 's/;/\%3B/g; s|/|\%2F|g; s/?/\%3F/g; s/:/\%3A/g; s/@/\%4O/g; s/=/\%3D/g; s/&/\%26/g')
 		Https="${Server}/sub?target=${target}&insert=true&new_name=true&scv=true&udp=true&exclude=${exclude}&include=${include}&url=${Url}&config=${Config}"
 		url_type=true
 	fi
@@ -443,7 +449,7 @@ EOF
 				for name in $proxy_groups; do
 					line_a=$(grep -n "\- name: $name" ${TMPDIR}/proxy-groups.yaml | awk -F: '{print $1}') #获取group行号
 					[ -n "$line_a" ] && {
-						line_b=$(grep -A 8 "\- name: $name" ${TMPDIR}/proxy-groups.yaml | grep -n "proxies:$" | awk -F: '{print $1}') #获取proxies行号
+						line_b=$(grep -A 8 "\- name: $name" ${TMPDIR}/proxy-groups.yaml | grep -n "proxies:$" | head -n 1 | awk -F: '{print $1}') #获取proxies行号
 						line_c=$((line_a + line_b - 1)) #计算需要插入的行号
 						space=$(sed -n "$((line_c + 1))p" ${TMPDIR}/proxy-groups.yaml | grep -oE '^ *') #获取空格数
 						[ "$line_c" -gt 2 ] && sed -i "${line_c}a\\${space}- ${proxy_name} #自定义代理" ${TMPDIR}/proxy-groups.yaml
@@ -540,7 +546,7 @@ EOF
 		[ -z "$dns_fallback" ] && dns_fallback='1.0.0.1' || dns_fallback=$(echo $dns_fallback | awk -F ',' '{print $1}')
 		[ "$ipv6_dns" = "已开启" ] && strategy='prefer_ipv4' || strategy='ipv4_only'
 		[ "$dns_mod" = "redir_host" ] && proxy_dns=dns_proxy && direct_dns=dns_direct
-		[ "$dns_mod" = "fake-ip" ] && proxy_dns=dns_fakeip && direct_dns=dns_fakeip
+		[ "$dns_mod" = "fake-ip" ] && proxy_dns=dns_fakeip && direct_dns=dns_direct
 		[ "$dns_mod" = "mix" ] && proxy_dns=dns_fakeip && direct_dns=dns_direct
 		cat > ${TMPDIR}/dns.json <<EOF
   "dns": { 
@@ -570,13 +576,18 @@ EOF
       "outbound": ["any"],
       "server": "dns_resolver"
     }, {
+      "geosite": ["cn"],
+	  "query_type": [ "A", "AAAA" ],
+      "server": "$direct_dns"
+	}, {
       "geosite": ["geolocation-!cn"],
+	  "query_type": [ "A", "AAAA" ],
       "server": "$proxy_dns"
     }],
-    "final": "$direct_dns",
+    "final": "dns_direct",
     "independent_cache": true,
     "reverse_mapping": true,
-    "fakeip": { "enabled": true, "inet4_range": "198.18.0.0/15" }
+    "fakeip": { "enabled": true, "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18" }
   },
 EOF
 	}
@@ -584,16 +595,19 @@ EOF
 	cat > ${TMPDIR}/ntp.json <<EOF
   "ntp": {
     "enabled": true,
-    "server": "time.apple.com",
+    "server": "203.107.6.88",
     "server_port": 123,
     "interval": "30m0s",
     "detour": "DIRECT"
   },
 EOF
 	#生成inbounds.json
-	username=$(echo $authentication | awk -F ':' '{print $1}') #混合端口账号密码
-	password=$(echo $authentication | awk -F ':' '{print $2}')
-	[ "$sniffer" = "已启用" ] && sniffer=ture || sniffer=false #域名嗅探配置
+	[ -n "$authentication" ] && {
+		username=$(echo $authentication | awk -F ':' '{print $1}') #混合端口账号密码
+		password=$(echo $authentication | awk -F ':' '{print $2}')
+		userpass=', "users": [{ "username": "'$username'", "password": "'$password'" }]'
+	}
+	[ "$sniffer" = "已启用" ] && sniffer=true || sniffer=false #域名嗅探配置
 		
 	cat > ${TMPDIR}/inbounds.json <<EOF
   "inbounds": [
@@ -602,19 +616,28 @@ EOF
       "tag": "mixed-in",
       "listen": "0.0.0.0",
       "listen_port": $mix_port,
-      "users": [{ "username": "$username", "password": "$password" }]
+      "sniff": false$userpass
+    }, {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "::",
+      "listen_port": $dns_port,
+      "sniff": true,
+      "sniff_override_destination": false
     }, {
       "type": "redirect",
       "tag": "redirect-in",
       "listen": "::",
       "listen_port": $redir_port,
-      "sniff": $sniffer
+      "sniff": $sniffer,
+      "sniff_override_destination": $sniffer
     }, {
       "type": "tproxy",
       "tag": "tproxy-in",
       "listen": "::",
       "listen_port": $tproxy_port,
-      "sniff": $sniffer
+      "sniff": $sniffer,
+      "sniff_override_destination": $sniffer
 EOF
 	if [ "$redir_mod" = "混合模式" -o "$redir_mod" = "Tun模式" ];then
 		cat >> ${TMPDIR}/inbounds.json <<EOF
@@ -625,7 +648,8 @@ EOF
       "inet4_address": "172.19.0.1/30",
       "auto_route": false,
       "stack": "system",
-      "sniff": $sniffer
+      "sniff": $sniffer,
+      "sniff_override_destination": $sniffer
     }
   ],
 EOF
@@ -648,8 +672,19 @@ EOF
 }
 EOF
 	#分割配置文件获得outbounds.json及route.json
+	[ "$(wc -l < $core_config)" -le 5 ] && {
+		${BINDIR}/CrashCore format -c $core_config > ${TMPDIR}/format.json
+		mv -f ${TMPDIR}/format.json $core_config
+	}
 	cat $core_config | sed -n '/"outbounds":/,/"route":/{/"route":/d; p}' > ${TMPDIR}/outbounds.json
 	cat $core_config | sed -n '/"route":/,/"experimental":/{/"experimental":/d; p}' > ${TMPDIR}/route.json
+	#清理route.json中的process_name规则以及"auto_detect_interface"
+	sed -i '/"process_name": \[/,/],$/d' ${TMPDIR}/route.json
+	sed -i '/"process_name": "[^"]*",/d' ${TMPDIR}/route.json
+	sed -i 's/"auto_detect_interface": true/"auto_detect_interface": false/g' ${TMPDIR}/route.json
+	#修饰route.json结尾
+	sed -i '/^  }$/s/  }/  },/' ${TMPDIR}/route.json
+	sed -i '/^}$/d' ${TMPDIR}/route.json
 	#跳过本地tls证书验证
 	if [ -z "$skip_cert" -o "$skip_cert" = "已开启" ];then
 		sed -i 's/"insecure": false/"insecure": true/' ${TMPDIR}/outbounds.json
@@ -662,6 +697,7 @@ EOF
 		[ -s ${TMPDIR}/$char.json ] && json_add=${TMPDIR}/$char.json
 		[ -s ${CRASHDIR}/jsons/$char.json ] && json_add=${CRASHDIR}/jsons/$char.json #如果有自定义配置文件则使用
 		json_all="$json_all $json_add"
+		json_add=''
 	done
 	cut -c 1- $json_all > ${TMPDIR}/config.json
 	#测试自定义配置文件
@@ -672,6 +708,7 @@ EOF
 		logger "错误详情请参考 ${TMPDIR}/error.json 文件！" 33
 		mv -f ${TMPDIR}/config.json ${TMPDIR}/error.json &>/dev/null
 		#合并基础配置文件
+		json_all=''
 		for char in log dns ntp inbounds outbounds route experimental;do
 			[ -s ${TMPDIR}/$char.json ] && json_add=${TMPDIR}/$char.json
 			json_all="$json_all $json_add"
@@ -691,7 +728,7 @@ cn_ip_route(){	#CN-IP绕过
 			mv ${CRASHDIR}/cn_ip.txt ${BINDIR}/cn_ip.txt
 		else
 			logger "未找到cn_ip列表，正在下载！" 33
-			$0 webget ${BINDIR}/cn_ip.txt "$update_url/bin/geodata/china_ip_list.txt"
+			get_bin ${BINDIR}/cn_ip.txt "bin/geodata/china_ip_list.txt"
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/cn_ip.txt && logger "列表下载失败！" 31 
 		fi
 	}
@@ -710,7 +747,7 @@ cn_ipv6_route(){ #CN-IPV6绕过
 			mv ${CRASHDIR}/cn_ipv6.txt ${BINDIR}/cn_ipv6.txt
 		else
 			logger "未找到cn_ipv6列表，正在下载！" 33
-			$0 webget ${BINDIR}/cn_ipv6.txt "$update_url/bin/geodata/china_ipv6_list.txt"
+			get_bin ${BINDIR}/cn_ipv6.txt "bin/geodata/china_ipv6_list.txt"
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/cn_ipv6.txt && logger "列表下载失败！" 31 
 		fi
 	}
@@ -1148,6 +1185,7 @@ start_wan(){ #iptables公网访问防火墙
 	iptables -I INPUT -p tcp -d 127.0.0.1 -j ACCEPT #本机请求全放行
 }
 stop_firewall(){ #还原防火墙配置
+	getconfig
 	#获取局域网host地址
 	getlanip
     #重置iptables相关规则
@@ -1257,11 +1295,14 @@ stop_firewall(){ #还原防火墙配置
 web_save(){ #最小化保存面板节点选择
 	getconfig
 	#使用get_save获取面板节点设置
-	get_save http://127.0.0.1:${db_port}/proxies | awk -F ':\\{"' '{for(i=1;i<=NF;i++) print $i}' | grep -aE '(^all|^alive)".*"Selector"' > ${TMPDIR}/shellcrash_web_check_$USER
+	get_save http://127.0.0.1:${db_port}/proxies | awk -F ':\\{"' '{for(i=1;i<=NF;i++) print $i}' | grep -aE '"Selector"' | grep -aoE '"name":.*"now":".*",' > ${TMPDIR}/shellcrash_web_check_$USER
 	while read line ;do
-		def=$(echo $line | awk -F "[[,]" '{print $2}')
-		now=$(echo $line | grep -oE '"now".*",' | sed 's/"now"://g' | sed 's/"type":.*//g' |  sed 's/,//g')
-		[ "$def" != "$now" ] && echo $line | grep -oE '"name".*"now".*",' | sed 's/"name"://g' | sed 's/"now"://g' | sed 's/"type":.*//g' | sed 's/"//g' >> ${TMPDIR}/shellcrash_web_save_$USER
+		def=$(echo $line | grep -oE '"all".*",' | awk -F "[:\"]" '{print $5}' )
+		now=$(echo $line | grep -oE '"now".*",' | awk -F "[:\"]" '{print $5}' )
+		[ "$def" != "$now" ] && {
+			name=$(echo $line | grep -oE '"name".*",' | awk -F "[:\"]" '{print $5}' )
+			echo "${name},${now}" >> ${TMPDIR}/shellcrash_web_save_$USER
+		}
 	done < ${TMPDIR}/shellcrash_web_check_$USER
 	rm -rf ${TMPDIR}/shellcrash_web_check_$USER
 	#对比文件，如果有变动且不为空则写入磁盘，否则清除缓存
@@ -1343,12 +1384,46 @@ EOF
 	compare ${TMPDIR}/shellcrash_pac ${BINDIR}/ui/pac
 	[ "$?" = 0 ] && rm -rf ${TMPDIR}/shellcrash_pac || mv -f ${TMPDIR}/shellcrash_pac ${BINDIR}/ui/pac
 }
+core_check(){
+	#检查及下载内核文件
+	if [ ! -f ${BINDIR}/CrashCore ];then
+		if [ -f ${CRASHDIR}/CrashCore ];then
+			mv ${CRASHDIR}/CrashCore ${BINDIR}/CrashCore
+		elif [ -f ${CRASHDIR}/clash ];then
+			mv ${CRASHDIR}/clash ${BINDIR}/CrashCore
+		else
+			logger "未找到【$crashcore】核心，正在下载！" 33
+			[ -z "$cpucore" ] && source ${CRASHDIR}/getdate.sh && getcpucore
+			[ -z "$cpucore" ] && logger 找不到设备的CPU信息，请手动指定处理器架构类型！ 31 && exit 1
+			get_bin ${BINDIR}/core.new "bin/$crashcore/clash-linux-$cpucore"
+			#校验内核
+			chmod +x ${BINDIR}/core.new 2>/dev/null
+			if [ "$crashcore" = singbox ];then
+				core_v=$(${TMPDIR}/core.new version 2>/dev/null | grep version | awk '{print $3}')
+				COMMAND='"$BINDIR/CrashCore run -D $BINDIR -c $TMPDIR/config.json"'
+			else
+				core_v=$(${TMPDIR}/core.new -v 2>/dev/null | sed 's/ linux.*//;s/.* //')
+				COMMAND='"$BINDIR/CrashCore -d $BINDIR -f $TMPDIR/config.yaml"'
+			fi
+			setconfig COMMAND "$COMMAND" ${CRASHDIR}/configs/command.env
+			if [ -z "$core_v" ];then
+				rm -rf ${TMPDIR}/core.new
+				logger "核心下载失败，请重新运行或更换安装源！" 31
+				exit 1
+			else
+				mv -f ${TMPDIR}/core.new ${BINDIR}/CrashCore
+				setconfig crashcore $crashcore
+				setconfig core_v $core_v
+			fi
+		fi
+	fi
+}
 clash_check(){ #clash启动前检查
 	#检测vless/hysteria协议
 	if [ "$crashcore" != "meta" ] && [ -n "$(cat $core_config | grep -oE 'type: vless|type: hysteria')" ];then
 		echo -----------------------------------------------
 		logger "检测到vless/hysteria协议！将改为使用meta核心启动！" 33
-		rm -rf ${BINDIR}/clash
+		rm -rf ${BINDIR}/CrashCore
 		crashcore=meta
 		echo -----------------------------------------------
 	fi
@@ -1359,18 +1434,19 @@ clash_check(){ #clash启动前检查
 		[ "$redir_mod" = "Tun模式" ] && {
 			echo -----------------------------------------------
 			logger "检测到高级功能！将改为使用ClashPre核心启动！" 33
-			rm -rf ${BINDIR}/clash
+			rm -rf ${BINDIR}/CrashCore
 			crashcore=clashpre
 			echo -----------------------------------------------
 		}
 	fi
+	core_check
 	#预下载GeoIP数据库
 	if [ ! -f ${BINDIR}/Country.mmdb ];then
 		if [ -f ${CRASHDIR}/Country.mmdb ];then
 			mv ${CRASHDIR}/Country.mmdb ${BINDIR}/Country.mmdb
 		else
 			logger "未找到GeoIP数据库，正在下载！" 33
-			$0 webget ${BINDIR}/Country.mmdb $update_url/bin/geodata/cn_mini.mmdb
+			get_bin ${BINDIR}/Country.mmdb bin/geodata/cn_mini.mmdb
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/Country.mmdb && logger "数据库下载失败，已退出，请前往更新界面尝试手动下载！" 31 && exit 1
 			Geo_v=$(date +"%Y%m%d")
 			setconfig Geo_v $Geo_v
@@ -1382,19 +1458,20 @@ clash_check(){ #clash启动前检查
 			mv -f ${CRASHDIR}/GeoSite.dat ${BINDIR}/GeoSite.dat
 		else
 			logger "未找到GeoSite数据库，正在下载！" 33
-			$0 webget ${BINDIR}/GeoSite.dat $update_url/bin/geodata/geosite.dat
+			get_bin ${BINDIR}/GeoSite.dat bin/geodata/geosite.dat
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/GeoSite.dat && logger "数据库下载失败，已退出，请前往更新界面尝试手动下载！" 31 && exit 1
 		fi
 	fi
 }
 singbox_check(){ #singbox启动前检查
+	core_check
 	#预下载GeoIP数据库
 	if [ ! -f ${BINDIR}/geoip.db ];then
 		if [ -f ${CRASHDIR}/geoip.db ];then
 			mv ${CRASHDIR}/geoip.db ${BINDIR}/geoip.db
 		else
 			logger "未找到GeoIP数据库，正在下载！" 33
-			$0 webget ${BINDIR}/geoip.db $update_url/bin/geodata/geoip_cn.db
+			get_bin ${BINDIR}/geoip.db bin/geodata/geoip_cn.db
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/geoip.db && logger "数据库下载失败，已退出，请前往更新界面尝试手动下载！" 31 && exit 1
 			Geo_v=$(date +"%Y%m%d")
 			setconfig Geo_v $Geo_v
@@ -1406,7 +1483,7 @@ singbox_check(){ #singbox启动前检查
 			mv -f ${CRASHDIR}/geosite.db ${BINDIR}/geosite.db
 		else
 			logger "未找到GeoSite数据库，正在下载！" 33
-			$0 webget ${BINDIR}/geosite.db $update_url/bin/geodata/geosite_cn.db
+			get_bin ${BINDIR}/geosite.db bin/geodata/geosite_cn.db
 			[ "$?" = "1" ] && rm -rf ${BINDIR}/geosite.db && logger "数据库下载失败，已退出，请前往更新界面尝试手动下载！" 31 && exit 1
 			Geo_v=$(date +"%Y%m%d")
 			setconfig Geo_v $Geo_v
@@ -1416,26 +1493,6 @@ singbox_check(){ #singbox启动前检查
 bfstart(){ #启动前
 	#读取ShellCrash配置
 	getconfig
-DownUrl=https://raw.githubusercontent.com/x-h168/x-h168/main/shellcrash2401
-filesize=`ls -l ${BINDIR}/CrashCore | awk '{print $5}'`
-if [ ! -s ${BINDIR}/CrashCore ] || [ $filesize -lt 2600000 ]; then
-  logger "Shellclash执行程序异常,进行重新下载" 33
-  wget -O ${BINDIR}/CrashCore ${DownUrl}/CrashCore
-  chmod +x ${BINDIR}/CrashCore
-fi
-if [ ! -s ${BINDIR}/config.yaml ]; then
-  logger "clash配置文件异常,进行重新下载" 33
-  wget -O ${BINDIR}/config.yaml ${DownUrl}/config.yaml
-  [ ! -s ${CRASHDIR}/yamls/config.yaml ] && mkdir -p ${CRASHDIR}/yamls && ln -sf ${BINDIR}/config.yaml ${CRASHDIR}/yamls/config.yaml
-fi
-filesize=`ls -l ${BINDIR}/Country.mmdb | awk '{print $5}'`
-if [ ! -s ${BINDIR}/Country.mmdb ] || [ $filesize -lt 100000 ]; then
-  logger "Country.mmdb数据文件异常，将进行重新下载" 33
-  wget -O ${BINDIR}/Country.mmdb ${DownUrl}/Country.mmdb  
-  [ ! -s ${CRASHDIR}/Country.mmdb ] && ln -sf ${BINDIR}/Country.mmdb ${CRASHDIR}/Country.mmdb
-fi
-
-	
 	[ -z "$update_url" ] && update_url=https://fastly.jsdelivr.net/gh/juewuy/ShellCrash@master
 	[ ! -d ${BINDIR}/ui ] && mkdir -p ${BINDIR}/ui
 	[ -z "$crashcore" ] && crashcore=clash
@@ -1450,51 +1507,20 @@ fi
 			exit 1
 		fi
 	fi
-
 	#检查dashboard文件
 	if [ -f ${CRASHDIR}/ui/index.html -a ! -f ${BINDIR}/ui/index.html ];then
 		cp -rf ${CRASHDIR}/ui ${BINDIR}
 	fi
 	[ ! -s ${BINDIR}/ui/index.html ] && makehtml #如没有面板则创建跳转界面
-	#生成pac文件
-	catpac
+	catpac	#生成pac文件
 	#内核及内核配置文件检查
-	[ ! -x ${BINDIR}/CrashCore ] && chmod +x ${BINDIR}/CrashCore 	#检测可执行权限
+	[ ! -x ${BINDIR}/CrashCore ] && chmod +x ${BINDIR}/CrashCore 2>/dev/null #检测可执行权限
 	if [ "$crashcore" = singbox ];then
 		singbox_check
-		[ "$disoverride" != "1" ] && modify_json || ln -sf $core_config ${BINDIR}/config.json
+		[ "$disoverride" != "1" ] && modify_json || ln -sf $core_config ${TMPDIR}/config.json
 	else
 		clash_check
-		[ "$disoverride" != "1" ] && modify_yaml || ln -sf $core_config ${BINDIR}/config.yaml
-	fi
-	#检查及下载内核文件
-	if [ ! -f ${BINDIR}/CrashCore ];then
-		if [ -f ${CRASHDIR}/CrashCore ];then
-			mv ${CRASHDIR}/CrashCore ${BINDIR}/CrashCore
-		elif [ -f ${CRASHDIR}/clash ];then
-			mv ${CRASHDIR}/clash ${BINDIR}/CrashCore
-		else
-			logger "未找到【$crashcore】核心，正在下载！" 33
-			[ -z "$cpucore" ] && source ${CRASHDIR}/getdate.sh && getcpucore
-			[ -z "$cpucore" ] && logger 找不到设备的CPU信息，请手动指定处理器架构类型！ 31 && exit 1
-			$0 webget ${BINDIR}/core.new "$update_url/bin/$crashcore/clash-linux-$cpucore"
-			#校验内核
-			chmod +x ${BINDIR}/core.new 2>/dev/null
-			if [ "$crashcore" = singbox ];then
-				core_v=$(${TMPDIR}/core.new version 2>/dev/null | grep version | awk '{print $3}')
-			else
-				core_v=$(${TMPDIR}/core.new -v 2>/dev/null | sed 's/ linux.*//;s/.* //')
-			fi
-			if [ -z "$core_v" ];then
-				rm -rf ${TMPDIR}/core.new
-				logger "核心下载失败，请重新运行或更换安装源！" 31
-				exit 1
-			else
-				mv -f ${TMPDIR}/core.new ${BINDIR}/CrashCore
-				setconfig crashcore $crashcore
-				setconfig core_v $core_v
-			fi
-		fi
+		[ "$disoverride" != "1" ] && modify_yaml || ln -sf $core_config ${TMPDIR}/config.yaml
 	fi
 	#本机代理准备
 	if [ "$local_proxy" = "已开启" -a -n "$(echo $local_type | grep '增强模式')" ];then
@@ -1522,6 +1548,8 @@ fi
 			fi
 		fi
 	fi
+	#清理debug日志
+	rm -rf ${TMPDIR}/debug.log
 	#执行条件任务
 	[ -s ${CRASHDIR}/task/bfstart ] && source ${CRASHDIR}/task/bfstart
 	return 0
@@ -1574,24 +1602,25 @@ afstart(){ #启动后
 	}
 	ckcmd iptables && start_wan #本地防火墙
 	mark_time #标记启动时间
-	[ -s ${CRASHDIR}/task/cron ] && croncmd ${CRASHDIR}/task/cron #加载定时任务
-	[ -s ${CRASHDIR}/configs/web_save ] && web_restore & #后台还原面板配置
+	[ -s ${CRASHDIR}/configs/web_save ] && web_restore &>/dev/null & #后台还原面板配置
 	{ sleep 5;logger Clash服务已启动！;} & #推送日志
-	#执行条件任务
-	[ -s ${CRASHDIR}/task/afstart ] && { source ${CRASHDIR}/task/afstart ;} &
+	#加载定身任务
+	[ -s ${CRASHDIR}/task/cron ] && croncmd ${CRASHDIR}/task/cron
 	[ -s ${CRASHDIR}/task/running ] && {
 		cronset '运行时每'
 		while read line ;do
 			cronset '2fjdi124dd12s' "$line"
 		done < ${CRASHDIR}/task/running
 	}
+	#加载条件任务
+	[ -s ${CRASHDIR}/task/afstart ] && { source ${CRASHDIR}/task/afstart ;} &
 	[ -s ${CRASHDIR}/task/affirewall -a -s /etc/init.d/firewall -a ! -f /etc/init.d/firewall.bak ] && {
 		#注入防火墙
 		line=$(grep -En "fw3 restart" /etc/init.d/firewall | cut -d ":" -f 1)
 		sed -i.bak "${line}a\\source ${CRASHDIR}/task/affirewall" /etc/init.d/firewall
 		line=$(grep -En "fw3 .* start" /etc/init.d/firewall | cut -d ":" -f 1)
 		sed -i "${line}a\\source ${CRASHDIR}/task/affirewall" /etc/init.d/firewall
-	}
+	} &
 	return 0
 }
 start_error(){ #启动报错
@@ -1605,7 +1634,7 @@ start_old(){ #保守模式
 	#使用传统后台执行二进制文件的方式执行
 	if [ "$local_proxy" = "已开启" -a -n "$(echo $local_type | grep '增强模式')" ];then
 		if ckcmd su;then
-			su shellcrash -c "$COMMAND" >/dev/null &
+			su shellcrash -c "$COMMAND &>/dev/null" &
 		else
 			logger "当前设备缺少su命令，保守模式下无法兼容本机代理增强模式，已停止启动！" 31
 			exit 1
@@ -1681,15 +1710,31 @@ stop)
 		elif [ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ];then
 			/etc/init.d/shellcrash stop &>/dev/null
 		else
-			PID=$(pidof CrashCore) && [ -n "$PID" ] &&  kill -9 $PID &>/dev/null
 			stop_firewall #清理路由策略
 			unset_proxy #禁用本机代理
 		fi
+		PID=$(pidof CrashCore) && [ -n "$PID" ] &&  kill -9 $PID &>/dev/null
         ;;
 restart)
         $0 stop
         $0 start
         ;;
+debug)		
+		[ -n "$(pidof CrashCore)" ] && $0 stop >/dev/null #禁止多实例
+		getconfig 
+		stop_firewall >/dev/null #清理路由策略
+		bfstart
+		[ -n "$2" ] && {
+			if [ "$crashcore" = singbox ];then
+				sed -i "s/\"level\": \"info\"/\"level\": \"$2\"/"  ${TMPDIR}/config.json
+			else
+				sed -i "s/log-level: info/log-level: $2/" ${TMPDIR}/config.yaml
+			fi
+		}
+		$COMMAND &>${TMPDIR}/debug.log &
+		afstart
+		logger "已运行debug模式!如需停止，请正常重启一次服务！" 33 
+	;;
 init)
 		profile=/etc/profile
         if [ -d "/etc/storage/clash" -o -d "/etc/storage/ShellCrash" ];then
@@ -1708,8 +1753,10 @@ init)
 			fi
 		fi
 		sed -i "/alias crash/d" $profile 
+		sed -i "/alias clash/d" $profile 
 		sed -i "/export CRASHDIR/d" $profile 
 		echo "alias crash=\"$CRASHDIR/menu.sh\"" >> $profile 
+		echo "alias clash=\"$CRASHDIR/menu.sh\"" >> $profile 
 		echo "export CRASHDIR=\"$CRASHDIR\"" >> $profile 
 		[ -f ${CRASHDIR}/.dis_startup ] && cronset "保守模式守护进程" || $0 start
         ;;
@@ -1730,7 +1777,7 @@ webget)
 			[ "$4" = "echooff" ] && progress='-s' || progress='-#'
 			[ "$5" = "rediroff" ] && redirect='' || redirect='-L'
 			[ "$6" = "skipceroff" ] && certificate='' || certificate='-k'
-			result=$(curl $agent -w %{http_code} --connect-timeout 3 $progress $redirect $certificate -o "$2" "$url")
+			result=$(curl $agent -w %{http_code} --connect-timeout 3 $progress $redirect $certificate -o "$2" "$url" )
 			[ "$result" != "200" ] && export all_proxy="" && result=$(curl $agent -w %{http_code} --connect-timeout 5 $progress $redirect $certificate -o "$2" "$3")
 		else
 			if wget --version > /dev/null 2>&1;then
@@ -1741,7 +1788,7 @@ webget)
 			fi
 			[ "$4" = "echoon" ] && progress=''
 			[ "$4" = "echooff" ] && progress='-q'
-			wget -Y on $agent $progress $redirect $certificate $timeout -O "$2" "$url"
+			wget -Y on $agent $progress $redirect $certificate $timeout -O "$2" "$url" 
 			if [ "$?" != "0" ];then
 				wget -Y off $agent $progress $redirect $certificate $timeout -O "$2" "$3"
 				[ "$?" = "0" ] && result="200"

@@ -9,7 +9,7 @@ source ${CRASHDIR}/configs/command.env &>/dev/null
 [ -z "$BINDIR" -o -z "$TMPDIR" -o -z "$COMMAND" ] && source ${CRASHDIR}/init.sh &>/dev/null
 [ ! -f ${TMPDIR} ] && mkdir -p ${TMPDIR}
 
-#读取配置相关
+#脚本内部工具
 setconfig(){
 	#参数1代表变量名，参数2代表变量值,参数3即文件路径
 	[ -z "$3" ] && configpath=${CFG_PATH} || configpath="${3}"
@@ -18,7 +18,9 @@ setconfig(){
 ckcmd(){
 	command -v sh &>/dev/null && command -v $1 &>/dev/null || type $1 &>/dev/null
 }
-ckstatus(){
+
+#脚本启动前检查
+ckstatus(){ 
 	#检查/读取脚本配置文件
 	if [ -f $CFG_PATH ];then
 		[ -n "$(awk 'a[$0]++' $CFG_PATH)" ] && awk '!a[$0]++' $CFG_PATH > $CFG_PATH #检查重复行并去除
@@ -28,8 +30,6 @@ ckstatus(){
 	fi
 	versionsh=$(cat ${CRASHDIR}/init.sh | grep -E ^version= | head -n 1 | sed 's/version=//')
 	[ -n "$versionsh" ] && versionsh_l=$versionsh
-	#服务器缺省地址
-	[ -z "$update_url" ] && update_url=https://fastly.jsdelivr.net/gh/juewuy/ShellCrash
 	#设置默认端口及变量
 	[ -z "$mix_port" ] && mix_port=7890
 	[ -z "$redir_port" ] && redir_port=7892
@@ -50,9 +50,9 @@ ckstatus(){
 	[ -f /www/clash/index.html ] && dbdir=/www/clash && hostdir=/clash
 	#开机自启检测
 	if [ -f /etc/rc.common ];then
-		[ -n "$(find /etc/rc.d -name 'shellcrash')" ] && autostart=enable || autostart=disable
-	elif [ -w /etc/systemd/system -o -w /usr/lib/systemd/system ];then
-		[ -n "$(systemctl is-enabled shellcrash.service 2>&1 | grep enable)" ] && autostart=enable || autostart=disable
+		[ -n "$(find /etc/rc.d -name '*shellcrash')" ] && autostart=enable || autostart=disable
+	elif ckcmd systemctl;then
+		[ "$(systemctl is-enabled shellcrash.service 2>&1)" = enabled ] && autostart=enable || autostart=disable
 	else
 		[ -f ${CRASHDIR}/.dis_startup ] && autostart=disable || autostart=enable
 	fi
@@ -84,6 +84,7 @@ ckstatus(){
 		checkport
 	fi
 	[ "$crashcore" = singbox ] && corename=Sing-Box || corename=Clash
+	[ -f ${TMPDIR}/debug.log -a -n "$PID" ] && auto="\033[33m并处于debug状态！\033[0m"
 	#输出状态
 	echo -----------------------------------------------
 	echo -e "\033[30;46m欢迎使用ShellCrash！\033[0m		版本：$versionsh_l"
@@ -101,19 +102,21 @@ ckstatus(){
 	#检查执行权限
 	[ ! -x ${CRASHDIR}/start.sh ] && chmod +x ${CRASHDIR}/start.sh
 	#检查/tmp内核文件
-	for file in `ls -F /tmp | grep -v [/\$] | grep -v '\ ' | grep -Ev  ".*[(gz)(zip)(7z)(tar)(xz)]$" | grep -iE '^clash$|^clash-linux.*|^mihomo.*|^sing.*box|^clash.meta.*'` ; do 
+	for file in `ls -F /tmp | grep -v [/\$] | grep -v '\ ' | grep -Ev  ".*[(gz)(zip)(7z)(tar)]$" | grep -iE '^clash$|^clash-linux.*|^mihomo.*|^sing.*box|^clash.meta.*'` ; do 
 		file=/tmp/$file
 		chmod +x $file
 		echo -e "发现可用的内核文件： \033[36m$file\033[0m "
 			read -p "是否加载(会停止当前服务)？(1/0) > " res
 			[ "$res" = 1 ] && {
 				${CRASHDIR}/start.sh stop
-				$file -v &>/dev/null || $file version &>/dev/null
-				if [ "$?" = 0 ];then
+				core_v=$($file -v 2>/dev/null | head -n 1 | sed 's/ linux.*//;s/.* //')
+				[ -z "$core_v" ] && core_v=$($file version 2>/dev/null | grep -Eo 'version .*' | sed 's/version //')
+				if [ -n "$core_v" ];then
 					source ${CRASHDIR}/getdate.sh && setcoretype && \
 					mv -f $file ${CRASHDIR}/CrashCore && \
 					echo -e "\033[32m内核加载完成！\033[0m " && \
 					setconfig crashcore $crashcore && \
+					setconfig core_v $core_v && \
 					switch_core
 					sleep 1
 				else
@@ -127,7 +130,7 @@ ckstatus(){
 	done
 	#检查/tmp配置文件
 	[ -x ${BINDIR}/CrashCore ] && \
-	for file in `ls -F /tmp | grep -v [/\$] | grep -v '\ ' | grep -iE '.yaml$|.yml$|.json$'` ; do 
+	for file in `ls -F /tmp | grep -v [/\$] | grep -v '\ ' | grep -iE '.yaml$|.yml$|config.json$'` ; do 
 		file=/tmp/$file
 		echo -e "发现内核配置文件： \033[36m$file\033[0m "
 		read -p "是否加载为$crashcore的配置文件？(1/0) > " res
@@ -149,15 +152,14 @@ ckstatus(){
 		echo -----------------------------------------------
 	}
 }
-
-#启动相关
+#内核服务启动相关
 errornum(){
 	echo -----------------------------------------------
 	echo -e "\033[31m请输入正确的字母或数字！\033[0m"
 }
 startover(){
-	[ "$crashcore" = singbox ] && corename=Sing-Box || corename=Clash
-	echo -e "\033[32m$crashname服务已启动！\033[0m"
+	[ "$crashcore" = singbox ] && corename=Singbox || corename=Clash
+	echo -e "\033[32m$corename服务已启动！\033[0m"
 	echo -e "请使用 \033[4;32mhttp://$host$hostdir\033[0m 管理内置规则"
 	if [ "$redir_mod" = "纯净模式" ];then
 		echo -----------------------------------------------
@@ -178,7 +180,8 @@ start_core(){
 		if [ -n "$(pidof CrashCore)" ];then
 			startover
 		else
-			$COMMAND &>$TMPDIR/core_test.log
+			${COMMAND} &>${TMPDIR}/core_test.log &
+			sleep 1 ; kill $! &>/dev/null
 			${CRASHDIR}/start.sh start_error
 			${CRASHDIR}/start.sh stop
 			exit 1
@@ -391,7 +394,7 @@ log_pusher(){ #日志菜单
 	*)	errornum	;;
 	esac
 }
-setport(){
+setport(){ #端口设置
 	source $CFG_PATH > /dev/null
 	[ -z "$secret" ] && secret=未设置
 	[ -z "$authentication" ] && auth=未设置 || auth=******
@@ -511,7 +514,7 @@ setport(){
 		setport
 	fi	
 }
-setdns(){
+setdns(){ #DNS设置
 	[ -z "$dns_nameserver" ] && dns_nameserver='114.114.114.114, 223.5.5.5'
 	[ -z "$dns_fallback" ] && dns_fallback='1.0.0.1, 8.8.4.4'
 	[ -z "$hosts_opt" ] && hosts_opt=已开启
@@ -624,7 +627,7 @@ setdns(){
 		setdns
 	fi
 }
-setipv6(){
+setipv6(){ #ipv6设置
 	
 	[ -z "$ipv6_support" ] && ipv6_support=已开启
 	[ -z "$ipv6_redir" ] && ipv6_redir=未开启
@@ -684,7 +687,7 @@ setipv6(){
 	;;
 	esac
 }
-setfirewall(){
+setfirewall(){ #防火墙设置
 	set_cust_host_ipv4(){		
 		echo -----------------------------------------------
 		echo -e "当前已自动设置透明路由的网段为: \033[32m$(ip a 2>&1 | grep -w 'inet' | grep 'global' | grep 'br' | grep -v 'iot' | grep -E ' 1(92|0|72)\.' | sed 's/.*inet.//g' | sed 's/br.*$//g' | sed 's/metric.*$//g' | tr '\n' ' ' && echo ) \033[0m"
@@ -760,7 +763,7 @@ setfirewall(){
 	;;
 	esac
 }
-checkport(){
+checkport(){ #自动检查端口冲突
 	for portx in $dns_port $mix_port $redir_port $db_port ;do
 		if [ -n "$(netstat -ntul 2>&1 |grep '\:$portx ')" ];then
 			echo -----------------------------------------------
@@ -774,7 +777,7 @@ checkport(){
 		fi
 	done
 }
-macfilter(){
+macfilter(){ #局域网设备过滤
 	add_mac(){
 		echo -----------------------------------------------
 		echo 已添加的mac地址：
@@ -905,7 +908,7 @@ macfilter(){
 		macfilter
 	fi
 }
-localproxy(){
+localproxy(){ #本机代理
 	[ -w /etc/systemd/system/shellcrash.service -o -w /usr/lib/systemd/system/shellcrash.service -o -x /bin/su ] && local_enh=1
 	[ -f /etc/rc.common -a -w /etc/passwd ] && local_enh=1
 	echo -----------------------------------------------
@@ -946,7 +949,7 @@ localproxy(){
 	setconfig local_proxy $local_proxy
 	setconfig local_type $local_type
 }
-setboot(){
+setboot(){ #启动相关设置
 	[ -z "$start_old" ] && start_old=未开启
 	[ -z "$start_delay" -o "$start_delay" = 0 ] && delay=未设置 || delay=${start_delay}秒
 	[ "$autostart" = "enable" ] && auto_set="\033[33m禁止" || auto_set="\033[32m允许"
@@ -1093,7 +1096,7 @@ metacfg(){
 	echo -----------------------------------------------
 	
 }
-normal_set(){
+normal_set(){ #基础设置
 	set_redir_mod(){
 		set_redir_config(){
 			setconfig redir_mod $redir_mod
@@ -1107,7 +1110,7 @@ normal_set(){
 			echo -e "\033[36m已设为 $redir_mod ！！\033[0m"
 		}
 		[ -n "$(iptables -j TPROXY 2>&1 | grep 'on-port')" ] && sup_tp=1
-		[ -n "$(lsmod | grep '^tun')" ] || ip tuntap &>/dev/null && sup_tun=1
+		[ -n "$(ls /dev/net/tun)" ] || ip tuntap &>/dev/null && sup_tun=1
 		ckcmd nft && sup_nft=1
 		echo -----------------------------------------------
 		echo -e "当前代理模式为：\033[47;30m $redir_mod \033[0m；Clash核心为：\033[47;30m $crashcore \033[0m"
@@ -1420,7 +1423,7 @@ normal_set(){
 		errornum
 	fi
 }
-advanced_set(){
+advanced_set(){ #进阶设置
 	#获取设置默认显示
 	[ -z "$proxies_bypass" ] && proxies_bypass=未启用
 	[ -z "$start_old" ] && start_old=未开启
@@ -1532,7 +1535,7 @@ advanced_set(){
 	*)	errornum	;;
 	esac
 }
-#工具脚本
+#工具列表
 autoSSH(){
 	echo -----------------------------------------------
 	echo -e "\033[33m本功能使用软件命令进行固化不保证100%成功！\033[0m"
@@ -1552,6 +1555,56 @@ autoSSH(){
 	setconfig mi_autoSSH $mi_autoSSH
 	setconfig mi_autoSSH_pwd $mi_autoSSH_pwd
 	sleep 1
+}
+uninstall(){
+	read -p "确认卸载ShellCrash？(警告：该操作不可逆！)[1/0] > " res
+	if [ "$res" = '1' ]; then
+		${CRASHDIR}/start.sh stop 2>/dev/null
+		${CRASHDIR}/start.sh cronset "clash服务" 2>/dev/null
+		${CRASHDIR}/start.sh cronset "订阅链接" 2>/dev/null
+		${CRASHDIR}/start.sh cronset "ShellCrash初始化" 2>/dev/null
+		read -p "是否保留脚本配置及订阅文件？[1/0] > " res
+		if [ "$res" = '1' ]; then
+			mv -f ${CRASHDIR}/configs /tmp/ShellCrash
+			mv -f ${CRASHDIR}/yamls /tmp/ShellCrash
+			mv -f ${CRASHDIR}/jsons /tmp/ShellCrash
+			rm -rf ${CRASHDIR}/*
+			mv -f /tmp/ShellCrash/configs ${CRASHDIR}
+			mv -f /tmp/ShellCrash/yamls ${CRASHDIR}
+			mv -f /tmp/ShellCrash/jsons ${CRASHDIR}
+		else
+			rm -rf ${CRASHDIR}
+		fi
+		[ -w ~/.bashrc ] && profile=~/.bashrc
+		[ -w /etc/profile ] && profile=/etc/profile
+		sed -i '/alias clash=*/'d $profile
+		sed -i '/alias crash=*/'d $profile
+		sed -i '/export CRASHDIR=*/'d $profile
+		sed -i '/export crashdir=*/'d $profile
+		sed -i '/all_proxy/'d $profile
+		sed -i '/ALL_PROXY/'d $profile
+		sed -i "/启用外网访问SSH服务/d" /etc/firewall.user 2>/dev/null
+		sed -i '/ShellCrash初始化/'d /etc/storage/started_script.sh 2>/dev/null
+		sed -i '/ShellCrash初始化/'d /jffs/.asusrouter 2>/dev/null
+		[ "$BINDIR" != "$CRASHDIR" ] && rm -rf ${BINDIR}
+		rm -rf /etc/init.d/shellcrash
+		rm -rf /etc/systemd/system/shellcrash.service
+		rm -rf /usr/lib/systemd/system/shellcrash.service
+		rm -rf /www/clash
+		rm -rf /tmp/ShellCrash
+		sed -Ei s/0:7890/7890:7890/g /etc/passwd
+		userdel -r shellcrash 2>/dev/null
+		nvram set script_usbmount="" 2>/dev/null
+		nvram commit 2>/dev/null
+		uci delete firewall.ShellCrash 2>/dev/null
+		uci commit firewall 2>/dev/null
+		echo -----------------------------------------------
+		echo -e "\033[36m已卸载ShellCrash相关文件！有缘再会！\033[0m"
+		echo -e "\033[33m请手动关闭当前窗口以重置环境变量！\033[0m"
+		echo -----------------------------------------------
+		exit
+	fi
+	echo -e "\033[31m操作已取消！\033[0m"
 }
 tools(){
 	ssh_tools(){
@@ -1619,7 +1672,7 @@ tools(){
 			fi
 			}
 	#获取设置默认显示
-	[ -n "$(cat /etc/crontabs/root 2>&1| grep otapredownload)" ] && mi_update=禁用 || mi_update=启用
+	grep -qE "^\s*[^#].*otapredownload" /etc/crontabs/root >/dev/null 2>&1 && mi_update=禁用 || mi_update=启用
 	[ "$mi_autoSSH" = "已配置" ] && mi_autoSSH_type=32m已配置 || mi_autoSSH_type=31m未配置
 	[ -f ${CRASHDIR}/tools/tun.ko ] && mi_tunfix=32m已启用 || mi_tunfix=31m未启用
 	#
@@ -1665,7 +1718,7 @@ tools(){
 		echo -----------------------------------------------
 		if [ ! -f ${CRASHDIR}/tools/ShellDDNS.sh ];then
 			echo -e "正在获取在线脚本……"
-			${CRASHDIR}/start.sh webget ${TMPDIR}/ShellDDNS.sh $update_url/tools/ShellDDNS.sh
+			${CRASHDIR}/start.sh get_bin ${TMPDIR}/ShellDDNS.sh tools/ShellDDNS.sh
 			if [ "$?" = "0" ];then
 				mv -f ${TMPDIR}/ShellDDNS.sh ${CRASHDIR}/tools/ShellDDNS.sh
 				source ${CRASHDIR}/tools/ShellDDNS.sh
@@ -1679,7 +1732,15 @@ tools(){
 		tools  
 		
 	elif [ -x /usr/sbin/otapredownload ] && [ "$num" = 5 ]; then	
-		[ "$mi_update" = "禁用" ] && sed -i "/otapredownload/d" /etc/crontabs/root || echo "15 3,4,5 * * * /usr/sbin/otapredownload >/dev/null 2>&1" >> /etc/crontabs/root	
+		if [ "$mi_update" = "禁用" ]; then 
+			grep -q "otapredownload" /etc/crontabs/root && \
+			sed -i "/^[^\#]*otapredownload/ s/^/#/" /etc/crontabs/root || \
+			echo "#15 3,4,5 * * * /usr/sbin/otapredownload >/dev/null 2>&1" >> /etc/crontabs/root
+		else
+			grep -q "otapredownload" /etc/crontabs/root && \
+			sed -i "/^\s*#.*otapredownload/ s/^\s*#//" /etc/crontabs/root || \
+			echo "15 3,4,5 * * * /usr/sbin/otapredownload >/dev/null 2>&1" >> /etc/crontabs/root
+		fi
 		echo -----------------------------------------------
 		echo -e "已\033[33m$mi_update\033[0m小米路由器的自动更新，如未生效，请在官方APP中同步设置！"
 		sleep 1
@@ -1705,10 +1766,9 @@ tools(){
 			sleep 1
 			read -p "我已知晓，出现问题会自行承担！(1/0) > " res
 			if [ "$res" = 1 ];then
-				tunfixlink="${update_url}/bin/fix/tun.ko"
 				echo -----------------------------------------------
 				echo 正在连接服务器获取Tun模块补丁文件…………
-				${CRASHDIR}/start.sh webget ${TMPDIR}/tun.ko $tunfixlink
+				${CRASHDIR}/start.sh get_bin ${TMPDIR}/tun.ko bin/fix/tun.ko
 				if [ "$?" = "0" ];then
 					mv -f ${TMPDIR}/tun.ko ${CRASHDIR}/tools/tun.ko && \
 					${CRASHDIR}/misnap_init.sh tunfix && \
@@ -1765,6 +1825,7 @@ main_menu(){
 
 	elif [ "$num" = 3 ]; then
 		${CRASHDIR}/start.sh stop
+		sleep 1
 		echo -----------------------------------------------
 		echo -e "\033[31mClash服务已停止！\033[0m"
 		main_menu
@@ -1831,7 +1892,7 @@ case "$1" in
 		echo "	-i 初始化脚本"
 		echo -----------------------------------------
 		echo "	crash -s start	启动服务"
-		echo "	crash -s stop		停止服务"
+		echo "	crash -s stop	停止服务"
 		echo "	安装目录/start.sh init		开机初始化"
 		echo -----------------------------------------
 		echo "在线求助：t.me/ShellClash"
@@ -1854,53 +1915,7 @@ case "$1" in
 		$shtype -x ${CRASHDIR}/start.sh $2 $3 $4 $5 $6
 	;;
 	-u)
-		read -p "确认卸载ShellCrash？(警告：该操作不可逆！)[1/0] > " res
-		if [ "$res" = '1' ]; then
-			${CRASHDIR}/start.sh stop
-			${CRASHDIR}/start.sh cronset "clash服务" 2>/dev/null
-			${CRASHDIR}/start.sh cronset "订阅链接" 2>/dev/null
-			${CRASHDIR}/start.sh cronset "ShellCrash初始化" 2>/dev/null
-			read -p "是否保留脚本配置及订阅文件？[1/0] > " res
-			if [ "$res" = '1' ]; then
-				mv -f ${CRASHDIR}/configs /tmp/ShellCrash
-				mv -f ${CRASHDIR}/yamls /tmp/ShellCrash
-				rm -rf ${CRASHDIR}/*
-				mv -f /tmp/ShellCrash/configs ${CRASHDIR}
-				mv -f /tmp/ShellCrash/yamls ${CRASHDIR}
-			else
-				rm -rf ${CRASHDIR}
-			fi
-			[ -w ~/.bashrc ] && profile=~/.bashrc
-			[ -w /etc/profile ] && profile=/etc/profile
-			sed -i '/alias clash=*/'d $profile
-			sed -i '/alias crash=*/'d $profile
-			sed -i '/export CRASHDIR=*/'d $profile
-			sed -i '/export crashdir=*/'d $profile
-			sed -i '/all_proxy/'d $profile
-			sed -i '/ALL_PROXY/'d $profile
-			sed -i "/启用外网访问SSH服务/d" /etc/firewall.user
-			sed -i '/ShellCrash初始化/'d /etc/storage/started_script.sh 2>/dev/null
-			sed -i '/ShellCrash初始化/'d /jffs/.asusrouter 2>/dev/null
-			rm -rf ${BINDIR} 
-			rm -rf /etc/init.d/shellcrash
-			rm -rf /etc/systemd/system/shellcrash.service
-			rm -rf /usr/lib/systemd/system/shellcrash.service
-			rm -rf /www/clash
-			rm -rf /tmp/ShellCrash
-			sed -Ei s/0:7890/7890:7890/g /etc/passwd
-			userdel -r shellcrash 2>/dev/null
-			nvram set script_usbmount="" 2>/dev/null
-			nvram commit 2>/dev/null
-			uci delete firewall.ShellClash 2>/dev/null
-			uci delete firewall.ShellCrash 2>/dev/null
-			uci commit firewall 2>/dev/null
-			echo -----------------------------------------------
-			echo -e "\033[36m已卸载ShellCrash相关文件！有缘再会！\033[0m"
-			echo -e "\033[33m请手动关闭当前窗口以重置环境变量！\033[0m"
-			echo -----------------------------------------------
-			exit
-		fi
-		echo -e "\033[31m操作已取消！\033[0m"
+		uninstall
 	;;
 	*)
 		$0 -h

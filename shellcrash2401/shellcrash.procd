@@ -26,7 +26,7 @@ start_service() {
 	fi
 }
 stop_service(){
+	procd_close_instance
 	$CRASHDIR/start.sh stop_firewall 
 	$CRASHDIR/start.sh unset_proxy
-	procd_close_instance
 }
