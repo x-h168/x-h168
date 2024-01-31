@@ -9,7 +9,7 @@ source ${CRASHDIR}/configs/command.env &>/dev/null
 [ -z "$BINDIR" -o -z "$TMPDIR" -o -z "$COMMAND" ] && source ${CRASHDIR}/init.sh &>/dev/null
 [ ! -f ${TMPDIR} ] && mkdir -p ${TMPDIR}
 
-#脚本内部工具
+#读取配置相关
 setconfig(){
 	#参数1代表变量名，参数2代表变量值,参数3即文件路径
 	[ -z "$3" ] && configpath=${CFG_PATH} || configpath="${3}"
@@ -30,7 +30,7 @@ ckstatus(){
 	fi
 	versionsh=$(cat ${CRASHDIR}/init.sh | grep -E ^version= | head -n 1 | sed 's/version=//')
 	[ -n "$versionsh" ] && versionsh_l=$versionsh
-	#设置默认端口及变量
+	#服务器缺省地址
 	[ -z "$mix_port" ] && mix_port=7890
 	[ -z "$redir_port" ] && redir_port=7892
 	[ -z "$db_port" ] && db_port=9999
@@ -49,7 +49,7 @@ ckstatus(){
 	[ -f ${CRASHDIR}/ui/index.html ] && dbdir=${CRASHDIR}/ui && hostdir=":$db_port/ui"
 	[ -f /www/clash/index.html ] && dbdir=/www/clash && hostdir=/clash
 	#开机自启检测
-	if [ -f /etc/rc.common ];then
+	if [ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ];then
 		[ -n "$(find /etc/rc.d -name '*shellcrash')" ] && autostart=enable || autostart=disable
 	elif ckcmd systemctl;then
 		[ "$(systemctl is-enabled shellcrash.service 2>&1)" = enabled ] && autostart=enable || autostart=disable
@@ -152,7 +152,7 @@ ckstatus(){
 		echo -----------------------------------------------
 	}
 }
-#内核服务启动相关
+
 errornum(){
 	echo -----------------------------------------------
 	echo -e "\033[31m请输入正确的字母或数字！\033[0m"
@@ -181,7 +181,7 @@ start_core(){
 			startover
 		else
 			${COMMAND} &>${TMPDIR}/core_test.log &
-			sleep 1 ; kill $! &>/dev/null
+			sleep 2 ; kill $! &>/dev/null
 			${CRASHDIR}/start.sh start_error
 			${CRASHDIR}/start.sh stop
 			exit 1
@@ -522,14 +522,14 @@ setdns(){ #DNS设置
 	[ -z "$dns_no" ] && dns_no=未禁用
 	echo -----------------------------------------------
 	echo -e "当前基础DNS：\033[32m$dns_nameserver\033[0m"
-	echo -e "FallbackDNS：\033[36m$dns_fallback\033[0m"
+	echo -e "PROXY-DNS：\033[36m$dns_fallback\033[0m"
 	echo -e "多个DNS地址请用\033[30;47m“|”\033[0m或者\033[30;47m“, ”\033[0m分隔输入"
 	echo -e "\033[33m必须拥有本地根证书文件才能使用dot/doh类型的加密dns\033[0m"
 	echo -e "\033[33m注意singbox内核只有首个dns会被加载！\033[0m"
 	echo -----------------------------------------------
 	echo -e " 1 修改\033[32m基础DNS\033[0m"
-	echo -e " 2 修改\033[36mFallback_DNS\033[0m"
-	echo -e " 3 \033[33m重置\033[0mDNS配置"
+	echo -e " 2 修改\033[36mPROXY-DNS\033[0m"
+	echo -e " 3 \033[33m重置\033[0m默认DNS配置"
 	echo -e " 4 一键配置\033[32m加密DNS\033[0m"
 	echo -e " 5 hosts优化：  	\033[36m$hosts_opt\033[0m	————调用本机hosts并劫持NTP服务"
 	echo -e " 6 Dnsmasq转发：	\033[36m$dns_redir\033[0m	————不推荐使用"
@@ -910,11 +910,11 @@ macfilter(){ #局域网设备过滤
 }
 localproxy(){ #本机代理
 	[ -w /etc/systemd/system/shellcrash.service -o -w /usr/lib/systemd/system/shellcrash.service -o -x /bin/su ] && local_enh=1
-	[ -f /etc/rc.common -a -w /etc/passwd ] && local_enh=1
+	[ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ] && [ -w /etc/passwd ] && local_enh=1
 	echo -----------------------------------------------
 	[ -n "$local_enh" ] && {
-		ckcmd iptables && [ -n "$(lsmod | grep ^xt_owner)" ] && echo -e " 1 使用\033[32miptables增强模式\033[0m配置(支持docker,推荐！)"
-		ckcmd nft && echo -e " 2 使用\033[32mnftables增强模式\033[0m配置(支持docker,推荐！)"
+		ckcmd iptables && [ -n "$(iptables -m owner --help | grep owner)" ] && echo -e " 1 使用\033[32miptables增强模式\033[0m配置(支持docker,推荐！)"
+		ckcmd nft && modprobe nf_nat &> /dev/null && echo -e " 2 使用\033[32mnftables增强模式\033[0m配置(支持docker,推荐！)"
 	}
 	echo -e " 3 使用\033[33m环境变量\033[0m方式配置(部分应用可能无法使用,不推荐！)"
 	echo -e " 0 返回上级菜单"
@@ -975,7 +975,7 @@ setboot(){ #启动相关设置
 			autostart=disable
 			echo -e "\033[33m已禁止Clash开机启动！\033[0m"
 		elif [ "$autostart" = "disable" ]; then
-			[ -f /etc/rc.common ] && /etc/init.d/shellcrash enable
+			[ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ] && /etc/init.d/shellcrash enable
 			ckcmd systemctl && systemctl enable shellcrash.service > /dev/null 2>&1
 			rm -rf ${CRASHDIR}/.dis_startup
 			autostart=enable
@@ -1026,6 +1026,8 @@ setboot(){ #启动相关设置
 		if [ "$mini_clash" = "未开启" ]; then 
 			if [ "$dir_size" -gt 20480 ];then
 				echo -e "\033[33m您的设备空间充足(>20M)，无需开启！\033[0m"
+			elif [ "start_old" != '已开启' -a "$(cat /proc/1/comm)" = "systemd" ];then
+				echo -e "\033[33m不支持systemd启动模式，请先启用保守模式！\033[0m"
 			else
 				[ "$BINDIR" = "$CRASHDIR" ] && BINDIR="$TMPDIR"
 				echo -e "\033[32m已经启用小闪存功能！\033[0m"
@@ -1111,18 +1113,18 @@ normal_set(){ #基础设置
 		}
 		[ -n "$(iptables -j TPROXY 2>&1 | grep 'on-port')" ] && sup_tp=1
 		[ -n "$(ls /dev/net/tun)" ] || ip tuntap &>/dev/null && sup_tun=1
-		ckcmd nft && sup_nft=1
+		ckcmd nft && modprobe nf_nat &> /dev/null && sup_nft=1 && modprobe nft_tproxy &> /dev/null && sup_nft=2
+		
 		echo -----------------------------------------------
 		echo -e "当前代理模式为：\033[47;30m $redir_mod \033[0m；Clash核心为：\033[47;30m $crashcore \033[0m"
 		echo -e "\033[33m切换模式后需要手动重启服务以生效！\033[0m"
 		echo -----------------------------------------------
-		echo -e " 1 \033[32mRedir模式\033[0m：    Redir转发TCP，不转发UDP"
-		echo -e " 2 \033[36m混合模式\033[0m：     Redir转发TCP，Tun转发UDP"
-		[ -n "$sup_tp" ] && echo -e " 3 \033[32mTproxy混合\033[0m：   Redir转发TCP，Tproxy转发UDP"
+		ckcmd iptables && echo -e " 1 \033[32mRedir模式\033[0m：    Redir转发TCP，不转发UDP"
+		[ -n "$sup_tun" ] && echo -e " 2 \033[36m混合模式\033[0m：     Redir转发TCP，Tun转发UDP"
 		[ -n "$sup_tun" ] && echo -e " 4 \033[33mTun模式\033[0m：      使用Tun转发TCP&UDP(占用高)"
 		[ -n "$sup_tp" ] && echo -e " 5 \033[32mTproxy模式\033[0m：   使用Tproxy转发TCP&UDP"
 		[ -n "$sup_nft" ] && echo -e " 6 \033[36mNft基础\033[0m：      使用nftables转发TCP，不转发UDP"
-		[ -n "$sup_nft" ] && echo -e " 7 \033[32mNft混合\033[0m：      使用nft_tproxy转发TCP&UDP"
+		[ "$sup_nft" = 2 ] && echo -e " 7 \033[32mNft混合\033[0m：      使用nft_tproxy转发TCP&UDP"
 		echo -e " 8 \033[36m纯净模式\033[0m：     不设置流量转发"
 		echo " 0 返回上级菜单"
 		read -p "请输入对应数字 > " num	
@@ -1207,7 +1209,7 @@ normal_set(){ #基础设置
 		echo -e "                   不支持绕过CN-IP功能"
 		echo -e " 2 redir_host模式：\033[32m兼容性更好\033[0m"
 		echo -e "                   需搭配加密DNS使用"
-		echo -e " 3 mix混合模式：	\033[32m内部realip外部fakeip\033[0m"
+		echo -e " 3 mix混合模式：   \033[32m内部realip外部fakeip\033[0m"
 		echo -e "                   限singbox内核+geosite.db!"
 		echo " 0 返回上级菜单"
 		read -p "请输入对应数字 > " num
@@ -1371,7 +1373,6 @@ normal_set(){ #基础设置
 			local_proxy=未开启
 			setconfig local_proxy $local_proxy
 			setconfig local_type
-			sed -i '/user shellcrash/d' /etc/init.d/clash 2>/dev/null
 			echo -e "\033[33m已经停用本机代理规则,请尽快重启服务！！\033[0m"
 		fi
 		sleep 1
@@ -1442,7 +1443,7 @@ advanced_set(){ #进阶设置
 	echo -e " 3 配置公网及局域网防火墙"
 	[ "$disoverride" != "1" ] && {
 		echo -e " 4 启用域名嗅探:	\033[36m$sniffer\033[0m	————用于流媒体及防DNS污染"
-		[ "$crashcore" = singbox ] || echo -e " 5 启用节点绕过:	\033[36m$proxies_bypass\033[0m	————用于防止多设备多重流量"
+		echo -e " 5 自定义\033[32m端口及秘钥\033[0m"
 		echo -e " 6 配置内置DNS服务	\033[36m$dns_no\033[0m"
 	}
 	echo -----------------------------------------------
@@ -1467,7 +1468,7 @@ advanced_set(){ #进阶设置
 		echo -----------------------------------------------
 		if [ "$sniffer" = "未启用" ];then
 			if [ "$crashcore" = "clash" ];then
-				rm -rf ${BINDIR}/clash
+				rm -rf ${BINDIR}/CrashCore
 				crashcore=meta
 				setconfig crashcore $crashcore
 				echo "已将ShellCrash内核切换为Meta内核！域名嗅探依赖Meta或者高版本clashpre内核！"
@@ -1484,17 +1485,17 @@ advanced_set(){ #进阶设置
 		advanced_set
 	;;
 	5)
-		echo -----------------------------------------------
-		if [ "$proxies_bypass" = "未启用" ];then
-			proxies_bypass=已启用
-			echo -e "\033[33m仅当ShellCrash与子网络同类应用使用相同节点配置时方可生效！\033[0m"
-			sleep 1
+		if [ -n "$(pidof CrashCore)" ];then
+			echo -----------------------------------------------
+			echo -e "\033[33m检测到服务正在运行，需要先停止服务！\033[0m"
+			read -p "是否停止服务？(1/0) > " res
+			if [ "$res" = "1" ];then
+				${CRASHDIR}/start.sh stop
+				setport
+			fi
 		else
-			proxies_bypass=未启用
-		fi
-		setconfig proxies_bypass $proxies_bypass
-		echo -e "\033[32m设置成功！\033[0m"
-		sleep 1		
+			setport
+		fi	
 		advanced_set
 	;;
 	6)
@@ -1535,7 +1536,7 @@ advanced_set(){ #进阶设置
 	*)	errornum	;;
 	esac
 }
-#工具列表
+#工具脚本
 autoSSH(){
 	echo -----------------------------------------------
 	echo -e "\033[33m本功能使用软件命令进行固化不保证100%成功！\033[0m"
@@ -1563,6 +1564,7 @@ uninstall(){
 		${CRASHDIR}/start.sh cronset "clash服务" 2>/dev/null
 		${CRASHDIR}/start.sh cronset "订阅链接" 2>/dev/null
 		${CRASHDIR}/start.sh cronset "ShellCrash初始化" 2>/dev/null
+		${CRASHDIR}/start.sh cronset "task.sh" 2>/dev/null
 		read -p "是否保留脚本配置及订阅文件？[1/0] > " res
 		if [ "$res" = '1' ]; then
 			mv -f ${CRASHDIR}/configs /tmp/ShellCrash
@@ -1592,7 +1594,7 @@ uninstall(){
 		rm -rf /usr/lib/systemd/system/shellcrash.service
 		rm -rf /www/clash
 		rm -rf /tmp/ShellCrash
-		sed -Ei s/0:7890/7890:7890/g /etc/passwd
+		sed -i '/0:7890/d' /etc/passwd
 		userdel -r shellcrash 2>/dev/null
 		nvram set script_usbmount="" 2>/dev/null
 		nvram commit 2>/dev/null
@@ -1687,9 +1689,9 @@ tools(){
 	echo -e " 3 \033[36m日志及推送工具\033[0m"
 	[ -f /etc/firewall.user ] && echo -e " 4 \033[32m配置\033[0m外网访问SSH"
 	[ -x /usr/sbin/otapredownload ] && echo -e " 5 \033[33m$mi_update\033[0m小米系统自动更新"
-	[ -f /data/clash/misnap_init.sh ] && echo -e " 6 小米设备软固化SSH ———— \033[$mi_autoSSH_type \033[0m"
+	[ -f ${CRASHDIR}/misnap_init.sh ] && echo -e " 6 小米设备软固化SSH ———— \033[$mi_autoSSH_type \033[0m"
 	[ -f /etc/config/ddns -a -d "/etc/ddns" ] && echo -e " 7 配置\033[32mDDNS服务\033[0m(需下载相关脚本)"
-	[ -f /data/clash/misnap_init.sh ] && echo -e " 8 小米设备Tun模块修复 ———— \033[$mi_tunfix \033[0m"
+	[ -f ${CRASHDIR}/misnap_init.sh ] && echo -e " 8 小米设备Tun模块修复 ———— \033[$mi_tunfix \033[0m"
 	echo -----------------------------------------------
 	echo -e " 0 返回上级菜单"
 	echo -----------------------------------------------

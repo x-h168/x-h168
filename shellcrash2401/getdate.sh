@@ -3,6 +3,7 @@
 
 error_down(){
 	echo -e  "\033[33m请尝试切换至其他安装源后重新下载！\033[0m" 
+	echo -e  "或者参考 \033[32;4mhttps://juewuy.github.io/bdaz\033[0m 进行本地安装！" 
 	sleep 1
 }
 dir_avail(){
@@ -11,7 +12,7 @@ dir_avail(){
 	}
 
 #导入订阅、配置文件相关
-setrules(){ #自定义clash规则
+setrules(){ #自定义规则
 	set_rule_type(){
 		echo -----------------------------------------------	
 		echo -e "\033[33m请选择规则类型\033[0m"
@@ -86,17 +87,19 @@ setrules(){ #自定义clash规则
 	}
 	echo -----------------------------------------------
 	echo -e "\033[33m你可以在这里快捷管理自定义规则\033[0m"
-	echo -e "\033[36m如需批量操作，请手动编辑：$YAMLSDIR/rules.yaml\033[0m"
+	echo -e "如需批量操作，请手动编辑：\033[36m $YAMLSDIR/rules.yaml\033[0m"
+	echo -e "\033[33msingbox和clash共用此处规则，可无缝切换！\033[0m"
+	echo -e "大量规则请尽量使用rule-set功能添加，\033[31m此处过量添加可能导致启动卡顿！\033[0m"
 	echo -----------------------------------------------
 	echo -e " 1 新增自定义规则"
 	echo -e " 2 移除自定义规则"
 	echo -e " 3 清空规则列表"
-	echo -e " 4 配置节点绕过:	\033[36m$proxies_bypass\033[0m"
+	[ "$crashcore" = singbox ] || echo -e " 4 配置节点绕过:	\033[36m$proxies_bypass\033[0m"
 	echo -e " 0 返回上级菜单"
 	read -p "请输入对应数字 > " num
 	case $num in
 	1)
-		rule_type="DOMAIN-SUFFIX DOMAIN-KEYWORD IP-CIDR SRC-IP-CIDR DST-PORT SRC-PORT GEOIP GEOSITE IP-CIDR6 DOMAIN MATCH"
+		rule_type="DOMAIN-SUFFIX DOMAIN-KEYWORD IP-CIDR SRC-IP-CIDR DST-PORT SRC-PORT GEOIP GEOSITE IP-CIDR6 DOMAIN"
 		rule_group="DIRECT#REJECT$(cat $YAMLSDIR/proxy-groups.yaml $YAMLSDIR/config.yaml 2>/dev/null | grep -Ev '^#' | grep -o '\- name:.*' | sed 's/- name: /#/g' | tr -d '\n')"
 		set_rule_type
 		setrules
@@ -363,17 +366,10 @@ EOF
 set_singbox_adv(){ #自定义singbox配置文件
 		echo -----------------------------------------------
 		echo -e "singbox配置文件中，支持自定义的模块有：\033[0m"
-		echo -e "\033[32mdns.json inbounds.json outbounds.json route.json\033[0m"
-		echo -e "将相应json文件放入\033[32m$JSONSDIR\033[0m目录后即可在启动时加载"
-		echo -e "\033[31m自定义的内容不会追加，而是完整替换原配置文件相应模块，请谨慎使用！\033[0m"
-		echo -e "singbox官方文档：\033[36mhttps://sing-box.sagernet.org/zh/\033[0m"
+		echo -e "\033[36mlog dns ntp inbounds outbounds outbound_providers route experimental\033[0m"
+		echo -e "将相应json文件放入\033[33m$JSONSDIR\033[0m目录后即可在启动时加载"
 		echo -----------------------------------------------
-		echo -e "\033[33m本工具使用cat命令合并，所以请完整遵循json格式！\033[0m"
-		echo -e "\033[33m每个模块结尾需要有逗号连接下一个模块！！！\033[0m"
-		echo -----------------------------------------------
-		echo -e "Windows下请\n使用\033[33mWinSCP软件\033[0m进行编辑！\033[0m"
-		echo -e "MacOS下请\n使用\033[33mSecureFX软件\033[0m进行编辑！\033[0m"
-		echo -e "Linux本机可\n使用\033[33mvim\033[0m进行编辑(路由设备可能不显示中文请勿使用)！\033[0m"
+		echo -e "使用前请务必参考配置教程:\033[32;4m https://juewuy.github.io/nWTjEpkSK \033[0m"
 }
 override(){ #配置文件覆写
 	[ -z "$rule_link" ] && rule_link=1
@@ -382,8 +378,8 @@ override(){ #配置文件覆写
 	echo -e "\033[30;47m 欢迎使用配置文件覆写功能！\033[0m"
 	echo -----------------------------------------------
 	echo -e " 1 自定义\033[32m端口及秘钥\033[0m"
+	echo -e " 2 管理\033[36m自定义规则\033[0m"
 	[ "$crashcore" = singbox ] || {
-		echo -e " 2 管理\033[36m自定义规则\033[0m"
 		echo -e " 3 管理\033[33m自定义节点\033[0m"
 		echo -e " 4 管理\033[36m自定义策略组\033[0m"
 	}
@@ -394,7 +390,6 @@ override(){ #配置文件覆写
 	read -p "请输入对应数字 > " num
 	case "$num" in
 	1)
-		source $CFG_PATH
 		if [ -n "$(pidof CrashCore)" ];then
 			echo -----------------------------------------------
 			echo -e "\033[33m检测到服务正在运行，需要先停止服务！\033[0m"
@@ -428,7 +423,7 @@ override(){ #配置文件覆写
 	9)
 		echo -----------------------------------------------
 		echo -e "\033[33m此功能可能会导致严重问题！启用后脚本中大部分功能都将禁用！！！\033[0m"
-		echo -e "如果你不是非常了解Clash的运行机制，切勿开启！\033[0m"
+		echo -e "如果你不是非常了解$crashcore的运行机制，切勿开启！\033[0m"
 		echo -e "\033[33m继续后如出现任何问题，请务必自行解决，一切提问恕不受理！\033[0m"
 		echo -----------------------------------------------
 		sleep 2
@@ -660,12 +655,12 @@ set_core_config(){ #配置文件功能
 	echo -----------------------------------------------
 	echo -e "\033[30;47m ShellCrash配置文件管理\033[0m"
 	echo -----------------------------------------------
-	echo -e " 1 在线\033[32m生成内核配置文件\033[0m"
+	echo -e " 1 在线\033[32m生成$crashcore配置文件\033[0m"
 	echo -e " 2 导入\033[33m外部配置文件链接\033[0m"
 	echo -e " 3 \033[36m管理\033[0m配置文件"
 	echo -e " 4 \033[33m更新\033[0m配置文件"
 	echo -e " 5 设置\033[36m自动更新\033[0m"
-	echo -e " 6 配置文件\033[32m覆写\033[0m"
+	echo -e " 6 \033[32m自定义\033[0m配置文件"
 	echo -----------------------------------------------
 	[ "$inuserguide" = 1 ] || echo -e " 0 返回上级菜单"
 	read -p "请输入对应数字 > " num
@@ -869,16 +864,13 @@ switch_core(){
 			 setconfig geoip_cn_v
 			 setconfig geosite_cn_v
 		}
-		read -p "是否保留$core_old相关配置文件？(1/0) > " res
-		[ "$res" = '0' ] && [ "$core_old" = "clash" ] && rm -rf ${CRASHDIR}/yamls
-		[ "$res" = '0' ] && [ "$core_old" = "singbox" ] && rm -rf ${CRASHDIR}/jsons			
 	}
 	if [ "$crashcore" = singbox ];then
-		COMMAND='"$BINDIR/CrashCore run -D $BINDIR -c $TMPDIR/config.json"'
+		COMMAND='"$BINDIR/CrashCore run -D $BINDIR -C $TMPDIR/jsons"'
 	else
 		COMMAND='"$BINDIR/CrashCore -d $BINDIR -f $TMPDIR/config.yaml"'
 	fi
-	setconfig COMMAND "$COMMAND" ${CRASHDIR}/configs/command.env
+	setconfig COMMAND "$COMMAND" ${CRASHDIR}/configs/command.env && source ${CRASHDIR}/configs/command.env
 }
 getcore(){
 	[ -z "$crashcore" ] && crashcore=clashpre
@@ -903,7 +895,7 @@ getcore(){
 		if [ "$crashcore" = singbox ];then
 			core_v=$(${TMPDIR}/core.new version 2>/dev/null | grep version | awk '{print $3}')
 		else
-			core_v=$(${TMPDIR}/core.new -v 2>/dev/null | grep linux | sed 's/ linux.*//;s/.* //')
+			core_v=$(${TMPDIR}/core.new -v 2>/dev/null | head -n 1 | sed 's/ linux.*//;s/.* //')
 		fi
 		if [ -z "$core_v" ];then
 			echo -e "\033[31m核心文件下载成功但校验失败！请尝试手动指定CPU版本\033[0m"
@@ -921,48 +913,44 @@ getcore(){
 }
 setcustcore(){
 	[ -z "$cpucore" ] && getcpucore
-	echo -----------------------------------------------
-	echo -e "\033[36m自定义内核均未经过适配，可能存在部分功能不兼容的问题！\033[0m"
-	echo -e "\033[36m如你不熟悉相关内核的运行机制，请使用脚本已经适配过的内核！\033[0m"
-	echo -e "\033[36m自定义内核不兼容小闪存模式，且下载可能依赖服务！\033[0m"
-	echo -e "\033[33m继续后如出现任何问题，请务必自行解决，一切提问恕不受理！\033[0m"
-	echo -----------------------------------------------
-	sleep 1
-	read -p "我确认遇到问题可以自行解决[1/0] > " res
-	[ "$res" = '1' ] && {
-		echo -e "\033[33m请选择需要使用的核心！\033[0m"
-		echo -e "1 \033[32m 测试版ClashPre内核 \033[0m"
-		echo -e "2 \033[32m 最新Meta.Alpha内核  \033[0m"
-		#echo -e "3 \033[32m Sing-Box官方内核  \033[0m"
-		echo -e "4 \033[33m 自定义内核链接 \033[0m"
-		read -p "请输入对应数字 > " num	
-		case "$num" in
-		1)
-			crashcore=clashpre
-			custcorelink=https://github.com/juewuy/ShellCrash/releases/download/clash.premium.latest/clash-linux-$cpucore
-			getcore			
-		;;
-		2)
-			crashcore=meta
-			custcorelink=https://github.com/juewuy/ShellCrash/releases/download/clash.meta.alpha/clash-linux-$cpucore
-			getcore			
-		;;
-		3)
-			crashcore=singbox
-			custcorelink=https://github.com/juewuy/ShellCrash/releases/download/singbox_core/singbox-linux-$cpucore
-			getcore			
-		;;
-		4)
-			read -p "请输入自定义内核的链接地址(必须是二进制文件) > " link
-			[ -n "$link" ] && custcorelink="$link"
-			crashcore=unknow
-			getcore
-		;;
-		*)
-			errornum
-		;;
-		esac
-	}
+	echo -e "\033[33m请选择需要使用的核心！\033[0m"
+	echo -e "1 \033[32m Premium-2023.08.17内核(已停止维护) \033[0m"
+	echo -e "2 \033[32m 最新Meta.Alpha内核(每日更新)  \033[0m"
+	echo -e "3 \033[32m singbox-1.8.2内核(支持rule-set)  \033[0m"
+	echo -e "4 \033[32m singbox_PuerNya内核(支持SSR、providers、rule-set)  \033[0m"
+	echo -e "9 \033[33m 自定义内核链接 \033[0m"
+	read -p "请输入对应数字 > " num	
+	case "$num" in
+	1)
+		crashcore=clashpre
+		custcorelink=https://github.com/juewuy/ShellCrash/releases/download/clash.premium.latest/clash-linux-$cpucore
+		getcore			
+	;;
+	2)
+		crashcore=meta
+		custcorelink=https://github.com/juewuy/ShellCrash/releases/download/clash.meta.alpha/clash-linux-$cpucore
+		getcore			
+	;;
+	3)
+		crashcore=singbox
+		custcorelink=https://github.com/juewuy/ShellCrash/releases/download/singbox_core/singbox-linux-$cpucore
+		getcore			
+	;;
+	4)
+		crashcore=singbox
+		custcorelink=https://github.com/juewuy/ShellCrash/releases/download/singbox_core_PuerNya/singbox-linux-$cpucore
+		getcore			
+	;;
+	9)
+		read -p "请输入自定义内核的链接地址(必须是二进制文件) > " link
+		[ -n "$link" ] && custcorelink="$link"
+		crashcore=unknow
+		getcore
+	;;
+	*)
+		errornum
+	;;
+	esac
 }
 setcore(){
 	#获取核心及版本信息
@@ -1020,7 +1008,15 @@ setcore(){
 		getcore
 	;;
 	5)
-		setcustcore
+		echo -----------------------------------------------
+		echo -e "\033[36m自定义内核均未经过适配，可能存在部分功能不兼容的问题！\033[0m"
+		echo -e "\033[36m如你不熟悉相关内核的运行机制，请使用脚本已经适配过的内核！\033[0m"
+		echo -e "\033[36m自定义内核不兼容小闪存模式，且下载可能依赖服务！\033[0m"
+		echo -e "\033[33m继续后如出现任何问题，请务必自行解决，一切提问恕不受理！\033[0m"
+		echo -----------------------------------------------
+		sleep 1
+		read -p "我确认遇到问题可以自行解决[1/0] > " res
+		[ "$res" = '1' ] && setcustcore
 	;;
 	6)
 		setcpucore
@@ -1072,9 +1068,11 @@ setcustgeo(){
 		sleep 1
 	}
 	checkcustgeo(){
+		[ "$api_tag" = "latest" ] && api_url=latest || api_url="tags/$api_tag"
 		[ ! -s ${TMPDIR}/geo.list ] && { 
 			echo -e "\033[32m正在查找可更新的数据库文件！\033[0m"
-			${CRASHDIR}/start.sh webget ${TMPDIR}/github_api https://api.github.com/repos/$project/releases/latest
+			${CRASHDIR}/start.sh webget ${TMPDIR}/github_api https://api.github.com/repos/${project}/releases/${api_url}
+			release_tag=$(cat ${TMPDIR}/github_api | grep '"tag_name":' | awk -F '"' '{print $4}')
 			cat ${TMPDIR}/github_api | grep "browser_download_url" | grep -oE 'releases/download.*' | grep -oiE 'geosite.*\.dat"$|country.*\.mmdb"$|geosite.*\.db"$|geoip.*\.db"$' | sed 's/"//' > ${TMPDIR}/geo.list
 			rm -rf ${TMPDIR}/github_api
 		}
@@ -1095,9 +1093,7 @@ setcustgeo(){
 					[ -n "$(echo $geotype | grep -oiE 'Country.*mmdb')" ] && geoname=Country.mmdb
 					[ -n "$(echo $geotype | grep -oiE 'geosite.*db')" ] && geoname=geosite.db
 					[ -n "$(echo $geotype | grep -oiE 'geoip.*db')" ] && geoname=geoip.db
-					[ -n "$(pidof CrashCore)" ] && \
-						custgeolink=https://raw.githubusercontent.com/${project}/release/$geotype || \
-						custgeolink=https://fastly.jsdelivr.net/gh/${project}@release/$geotype
+					custgeolink=https://github.com/${project}/releases/download/${release_tag}/${geotype}
 					getcustgeo
 					checkcustgeo
 				else
@@ -1115,60 +1111,63 @@ setcustgeo(){
 	}
 	rm -rf ${TMPDIR}/geo.list
 	echo -----------------------------------------------
-	echo -e "\033[36m自定义数据库需要调用第三方地址，请尽量在服务启动后更新！\033[0m"
-	echo -e "\033[36m自定义数据库不兼容小闪存模式，也不支持自动更新！\033[0m"
-	echo -e "\033[33m继续后如出现任何问题，请务必自行解决，一切提问恕不受理！\033[0m"
+	echo -e "\033[36m此处数据库均源自互联网采集，此处致谢各位作者！\033[0m"
+	echo -e "\033[32m请点击或复制链接前往项目页面查看具体说明！\033[0m"
+	echo -e "\033[33m如遇到网络错误请先启动ShellCrash服务！\033[0m"
+	echo -e "\033[0m请选择需要更新的数据库项目来源：\033[0m"
 	echo -----------------------------------------------
-	read -p "我确认遇到问题可以自行解决[1/0] > " res
-	[ "$res" = '1' ] && {
-		echo -----------------------------------------------
-		echo -e "\033[36m此处数据库均源自互联网采集，此处致谢各位作者！\033[0m"
-		echo -e "\033[32m请点击或复制链接前往项目页面查看具体说明！\033[0m"
-		echo -e "\033[33m如遇到网络错误请先启动ShellCrash服务！\033[0m"
-		echo -e "\033[0m请选择需要更新的数据库项目来源：\033[0m"
-		echo -----------------------------------------------
-		echo -e " 1 \033[36;4mhttps://github.com/MetaCubeX/meta-rules-dat\033[0m (Clash及SingBox)"
-		echo -e " 2 \033[36;4mhttps://github.com/DustinWin/clash-geosite\033[0m (Clash及SingBox)"
-		echo -e " 3 \033[36;4mhttps://github.com/lyc8503/sing-box-rules\033[0m (仅限SingBox)"
-		echo -e " 4 \033[36;4mhttps://github.com/Loyalsoldier/geoip\033[0m (仅限Clash-GeoIP)"
-		echo -----------------------------------------------
-		echo -e " 9 \033[33m自定义数据库链接 \033[0m"
-		echo -e " 0 返回上级菜单"
-		read -p "请输入对应数字 > " num	
-		case "$num" in
-		0)
-		;;
-		1)
-			project=MetaCubeX/meta-rules-dat
-			checkcustgeo
-			setcustgeo
-		;;
-		2)
-			project=DustinWin/clash-geosite
-			checkcustgeo
-			setcustgeo
-		;;
-		3)
-			project=lyc8503/sing-box-rules
-			checkcustgeo	
-			setcustgeo
-		;;
-		4)
-			project=Loyalsoldier/geoip
-			checkcustgeo	
-			setcustgeo
-		;;
-		9)
-			read -p "请输入自定义数据库的链接地址 > " link
-			[ -n "$link" ] && custgeolink="$link"
-			getgeo
-			setcustgeo
-		;;
-		*)
-			errornum
-		;;
-		esac
-	}
+	echo -e " 1 \033[36;4mhttps://github.com/MetaCubeX/meta-rules-dat\033[0m (Clash及SingBox)"
+	echo -e " 2 \033[36;4mhttps://github.com/DustinWin/ruleset_geodata\033[0m (仅限Clash)"
+	echo -e " 3 \033[36;4mhttps://github.com/DustinWin/ruleset_geodata\033[0m (仅限SingBox)"
+	echo -e " 4 \033[36;4mhttps://github.com/lyc8503/sing-box-rules\033[0m (仅限SingBox)"
+	echo -e " 5 \033[36;4mhttps://github.com/Loyalsoldier/geoip\033[0m (仅限Clash-GeoIP)"
+	echo -----------------------------------------------
+	echo -e " 9 \033[33m自定义数据库链接 \033[0m"
+	echo -e " 0 返回上级菜单"
+	read -p "请输入对应数字 > " num	
+	case "$num" in
+	0)
+	;;
+	1)
+		project=MetaCubeX/meta-rules-dat
+		api_tag=latest
+		checkcustgeo
+		setcustgeo
+	;;
+	2)
+		project=DustinWin/ruleset_geodata
+		api_tag=clash
+		checkcustgeo
+		setcustgeo
+	;;
+	3)
+		project=DustinWin/ruleset_geodata
+		api_tag=sing-box
+		checkcustgeo
+		setcustgeo
+	;;
+	4)
+		project=lyc8503/sing-box-rules
+		api_tag=latest
+		checkcustgeo	
+		setcustgeo
+	;;
+	5)
+		project=Loyalsoldier/geoip
+		api_tag=latest
+		checkcustgeo	
+		setcustgeo
+	;;
+	9)
+		read -p "请输入自定义数据库的链接地址 > " link
+		[ -n "$link" ] && custgeolink="$link"
+		getgeo
+		setcustgeo
+	;;
+	*)
+		errornum
+	;;
+	esac
 }
 setgeo(){
 	source $CFG_PATH > /dev/null
@@ -1186,6 +1185,7 @@ setgeo(){
 	echo -e " 5 Meta完整版GeoSite数据库(约5mb)	\033[33m$geosite_v\033[0m"
 	echo -e " 6 SingBox精简版GeoIP_cn数据库(约0.3mb)	\033[33m$geoip_cn_v\033[0m"
 	echo -e " 7 SingBox精简版GeoSite数据库(约0.8mb)	\033[33m$geosite_cn_v\033[0m"
+	echo -----------------------------------------------
 	echo -e " 9 \033[32m自定义数据库\033[0m：	\033[33m仅限专业用户使用\033[0m"
 	echo " 0 返回上级菜单"
 	echo -----------------------------------------------
@@ -1278,7 +1278,13 @@ setgeo(){
 		setgeo
 	;;
 	9)
-		setcustgeo
+		echo -----------------------------------------------
+		echo -e "\033[36m自定义数据库需要调用第三方地址，请尽量在服务启动后更新！\033[0m"
+		echo -e "\033[36m自定义数据库不兼容小闪存模式，也不支持自动更新！\033[0m"
+		echo -e "\033[33m继续后如出现任何问题，请务必自行解决，一切提问恕不受理！\033[0m"
+		echo -----------------------------------------------
+		read -p "我确认遇到问题可以自行解决[1/0] > " res
+		[ "$res" = '1' ] && setcustgeo
 	;;	
 	*)
 		errornum
@@ -1372,31 +1378,40 @@ setdb(){
 	echo -----------------------------------------------
 	echo -e "请选择面板\033[33m安装类型：\033[0m"
 	echo -----------------------------------------------
-	echo -e " 1 安装\033[32m官方面板\033[0m(约500kb)"
-	echo -e " 2 安装\033[32mMeta面板\033[0m(约800kb)"
-	echo -e " 3 安装\033[32mYacd面板\033[0m(约1.1mb)"
-	echo -e " 4 安装\033[32mYacd-Meta魔改面板\033[0m(约1.5mb)"
-	echo -e " 5 安装\033[32mMetaXD面板\033[0m(约1.5mb)"
-	echo -e " 6 卸载\033[33m本地面板\033[0m"
+	echo -e " 1 安装\033[32mYacd面板\033[0m(约1.1mb)"
+	echo -e " 2 安装\033[32mYacd-Meta魔改面板\033[0m(约1.5mb)"
+	echo -e " 3 安装\033[32mMetaXD面板\033[0m(约1.5mb)"
+	[ "$crashcore" != singbox ] && {
+		echo -e " 4 安装\033[32m基础面板\033[0m(约500kb)"
+		echo -e " 5 安装\033[32mMeta基础面板\033[0m(约800kb)"
+	}
+	echo -e " 9 卸载\033[33m本地面板\033[0m"
 	echo " 0 返回上级菜单"
 	read -p "请输入对应数字 > " num
 
-	if [ "$num" = '1' ]; then
-		db_type=clashdb
-		dbdir
-	elif [ "$num" = '2' ]; then
-		db_type=meta_db
-		dbdir
-	elif [ "$num" = '3' ]; then
+	case "$num" in
+	0) ;;
+	1)
 		db_type=yacd
 		dbdir
-	elif [ "$num" = '4' ]; then
+	;;
+	2)
 		db_type=meta_yacd
 		dbdir
-	elif [ "$num" = '5' ]; then
+	;;
+	3)
 		db_type=meta_xd
 		dbdir
-	elif [ "$num" = '6' ]; then
+	;;
+	4)
+		db_type=clashdb
+		dbdir
+	;;
+	5)
+		db_type=meta_db
+		dbdir
+	;;
+	9)
 		read -p "确认卸载本地面板？(1/0) > " res
 		if [ "$res" = 1 ];then
 			rm -rf /www/clash
@@ -1406,9 +1421,11 @@ setdb(){
 			echo -e "\033[31m面板已经卸载！\033[0m"
 			sleep 1
 		fi
-	else
+	;;
+	*)
 		errornum
-	fi
+	;;
+	esac
 }
 
 getcrt(){
@@ -1482,9 +1499,9 @@ setserver(){
 	echo -----------------------------------------------
 	grep -E "^1|$release_name" ${CRASHDIR}/configs/servers.list | awk '{print " "NR" "$2}'
 	echo -----------------------------------------------
-	echo -e " a 切换至\033[32m稳定版\033[0m"
-	echo -e " b 切换至\033[36m公测版\033[0m"
-	echo -e " c 切换至\033[33m开发版\033[0m"
+	echo -e " a 切换至\033[32m稳定版-stable\033[0m"
+	echo -e " b 切换至\033[36m公测版-master\033[0m"
+	echo -e " c 切换至\033[33m开发版-dev\033[0m"
 	echo -----------------------------------------------
 	echo -e " d 自定义源地址(用于本地源或自建源)"
 	echo -e " e \033[31m版本回退\033[0m"
@@ -1513,12 +1530,12 @@ setserver(){
 	;;
 	a)
 		release_type=stable
-		setconfig release_type $release_type
+		[ -z "$url_id" ] && url_id=101
 		setserver
 	;;
 	b)
 		release_type=master
-		setconfig release_type $release_type
+		[ -z "$url_id" ] && url_id=101
 		setserver
 	;;
 	c)
@@ -1529,7 +1546,7 @@ setserver(){
 		read -p "是否依然切换到开发版？(1/0) > " res
 		if [ "$res" = 1 ];then
 			release_type=dev
-			setconfig release_type $release_type
+			[ -z "$url_id" ] && url_id=101
 		fi
 		setserver
 	;;
@@ -1612,7 +1629,7 @@ update(){
 		sleep 1
 	}
 	echo -----------------------------------------------
-	echo -e " 1 更新\033[36m管理脚本    \033[33m$versionsh_l\033[0m > \033[32m$version_new\033[0m"
+	echo -e " 1 更新\033[36m管理脚本    \033[33m$versionsh_l\033[0m > \033[32m$version_new \033[36m$release_type\033[0m"
 	echo -e " 2 切换\033[33m内核文件    \033[33m$core_v\033[0m > \033[32m$core_v_new\033[0m"
 	echo -e " 3 更新\033[32m数据库文件\033[0m"
 	echo -e " 4 安装本地\033[35mDashboard\033[0m面板"
@@ -1624,6 +1641,7 @@ update(){
 	echo -e " 9 \033[31m卸载ShellCrash\033[0m"
 	echo -----------------------------------------------
 	echo -e "99 \033[36m鸣谢！\033[0m"
+	echo -----------------------------------------------
 	echo -e " 0 返回上级菜单" 
 	echo -----------------------------------------------
 	read -p "请输入对应数字 > " num
@@ -1708,8 +1726,10 @@ userguide(){
 		elif [ "$num" = 1 ];then
 			#设置运行模式
 			redir_mod="Redir模式"
-			ckcmd nft && redir_mod="Nft基础"
-			modprobe nft_tproxy &> /dev/null && redir_mod="Nft混合"
+			ckcmd nft && {
+				redir_mod="Nft基础"
+				modprobe nft_tproxy &> /dev/null && redir_mod="Nft混合"
+			}
 			setconfig redir_mod "$redir_mod"
 			#自动识别IPV6
 			[ -n "$(ip a 2>&1 | grep -w 'inet6' | grep -E 'global' | sed 's/.*inet6.//g' | sed 's/scope.*$//g')" ] && {
@@ -1718,8 +1738,8 @@ userguide(){
 				setconfig ipv6_dns 已开启
 			}
 			#设置开机启动
-			[ -f /etc/rc.common ] && /etc/init.d/CrashCore enable
-			ckcmd systemctl && systemctl enable shellcrash.service > /dev/null 2>&1
+			[ -f /etc/rc.common -a "$(cat /proc/1/comm)" = "procd" ] && /etc/init.d/shellcrash enable
+			ckcmd systemctl && [ "$(cat /proc/1/comm)" = "systemd" ] && systemctl enable shellcrash.service > /dev/null 2>&1
 			rm -rf ${CRASHDIR}/.dis_startup
 			autostart=enable
 			#检测IP转发
@@ -1858,7 +1878,7 @@ debug(){
 	1)
 		$CRASHDIR/start.sh stop
 		if [ "$crashcore" = singbox ] ;then
-			$BINDIR/CrashCore run -D $BINDIR -c $TMPDIR/config.json &
+			$BINDIR/CrashCore run -D $BINDIR -C $TMPDIR/jsons &
 			{ sleep 4 ; kill $! &>/dev/null & }
 			wait
 		else

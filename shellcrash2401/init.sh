@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (C) Juewuy
 
-version=1.8.7c
+version=1.8.9d
 
 setdir(){
 	dir_avail(){
@@ -159,15 +159,23 @@ else
 	[ -w /usr/lib/systemd/system ] && sysdir=/usr/lib/systemd/system
 	[ -w /etc/systemd/system ] && sysdir=/etc/systemd/system
 	if [ -n "$sysdir" -a "$USER" = "root" -a "$(cat /proc/1/comm)" = "systemd" ];then
-		#设为systemd方式启动
+		#创建shellcrash用户
+		sed -i '/0:7890/d' /etc/passwd
+		sed -i '/x:7890/d' /etc/group
+		if type useradd &>/dev/null; then
+			useradd shellcrash -u 7890
+			sed -Ei s/7890:7890/0:7890/g /etc/passwd
+		else
+			echo "shellcrash:x:0:7890::/home/shellcrash:/bin/sh" >> /etc/passwd
+		fi
+		#配置systemd
 		mv -f ${CRASHDIR}/shellcrash.service $sysdir/shellcrash.service 2>/dev/null
 		sed -i "s%/etc/ShellCrash%$CRASHDIR%g" $sysdir/shellcrash.service
 		rm -rf $sysdir/clash.service #旧版文件清理
 		systemctl daemon-reload
-	else
+	fi
 		#设为保守模式启动
 		setconfig start_old 已开启
-	fi
 fi
 #修饰文件及版本号
 command -v bash &>/dev/null && shtype=bash || shtype=sh 
@@ -177,13 +185,15 @@ for file in start.sh task.sh ;do
 done
 setconfig versionsh_l $version
 #生成用于执行systemd及procd服务的变量文件
-TMPDIR='/tmp/ShellCrash'
-BINDIR=${CRASHDIR}
-touch ${CRASHDIR}/configs/command.env
-setconfig TMPDIR ${TMPDIR} ${CRASHDIR}/configs/command.env
-setconfig BINDIR ${BINDIR} ${CRASHDIR}/configs/command.env	
+[ ! -f ${CRASHDIR}/configs/command.env ] && {
+	TMPDIR='/tmp/ShellCrash'
+	BINDIR=${CRASHDIR}
+	touch ${CRASHDIR}/configs/command.env
+	setconfig TMPDIR ${TMPDIR} ${CRASHDIR}/configs/command.env
+	setconfig BINDIR ${BINDIR} ${CRASHDIR}/configs/command.env	
+}
 if [ -x ${CRASHDIR}/CrashCore ] && [ -n "$(grep 'crashcore=singbox' ${CRASHDIR}/configs/ShellCrash.cfg)" ];then
-	COMMAND='"$BINDIR/CrashCore run -D $BINDIR -c $TMPDIR/config.json"'
+	COMMAND='"$BINDIR/CrashCore run -D $BINDIR -C $TMPDIR/jsons"'
 else
 	COMMAND='"$BINDIR/CrashCore -d $BINDIR -f $TMPDIR/config.yaml"'
 fi
@@ -204,8 +214,13 @@ if [ -n "$profile" ];then
 	echo "export CRASHDIR=\"$CRASHDIR\"" >> $profile #设置路径环境变量
 	source $profile &>/dev/null || echo 运行错误！请使用bash而不是dash运行安装命令！！！
 	#适配zsh环境变量
-	[ -n "$(ls -l /bin/sh|grep -oE 'zsh')" ] && [ -z "$(cat ~/.zshrc 2>/dev/null|grep CRASHDIR)" ] && { 
+	[ -n "$(cat /etc/shells 2>/dev/null|grep -oE 'zsh')" ] && [ -z "$(cat ~/.zshrc 2>/dev/null|grep CRASHDIR)" ] && { 
+		sed -i '/alias crash=*/'d ~/.zshrc
 		echo "alias crash=\"$shtype $CRASHDIR/menu.sh\"" >> ~/.zshrc
+  		# 兼容 clash 命令
+		sed -i '/alias clash=*/'d ~/.zshrc
+		echo "alias clash=\"$shtype $CRASHDIR/menu.sh\"" >> ~/.zshrc
+		sed -i '/export CRASHDIR=*/'d ~/.zshrc
 		echo "export CRASHDIR=\"$CRASHDIR\"" >> ~/.zshrc
 		source ~/.zshrc &>/dev/null
 	}
@@ -269,11 +284,12 @@ for file in cron task.sh task.list;do
 done
 chmod 755 ${CRASHDIR}/task/task.sh
 #旧版文件清理
+userdel shellclash &>/dev/null
+sed -i '/shellclash/d' /etc/passwd
+sed -i '/shellclash/d' /etc/group
 rm -rf /etc/init.d/clash
-rm -rf $CRASHDIR/clashservice
-rm -rf $CRASHDIR/shellcrash.rc
-rm -rf $CRASHDIR/clash.sh
-for file in log shellcrash.service mark? mark.bak;do
+[ "$systype" = "mi_snapshot" -a "$CRASHDIR" != '/data/clash' ] && rm -rf /data/clash
+for file in clash.sh shellcrash.rc core.new clashservice log shellcrash.service mark? mark.bak;do
 	rm -rf ${CRASHDIR}/$file
 done
 #旧版变量改名
